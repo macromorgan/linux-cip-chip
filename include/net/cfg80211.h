@@ -1431,6 +1431,21 @@ struct cfg80211_ssid {
 };
 
 /**
+ * struct cfg80211_scan_info - information about completed scan
+ * @scan_start_tsf: scan start time in terms of the TSF of the BSS that the
+ *	wireless device that requested the scan is connected to. If this
+ *	information is not available, this field is left zero.
+ * @tsf_bssid: the BSSID according to which %scan_start_tsf is set.
+ * @aborted: set to true if the scan was aborted for any reason,
+ *	userspace will be notified of that
+ */
+struct cfg80211_scan_info {
+	u64 scan_start_tsf;
+	u8 tsf_bssid[ETH_ALEN] __aligned(2);
+	bool aborted;
+};
+
+/**
  * struct cfg80211_scan_request - scan request description
  *
  * @ssids: SSIDs to scan for (active scan only)
