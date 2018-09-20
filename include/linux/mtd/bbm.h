@@ -114,6 +114,11 @@ struct nand_bbt_descr {
  * entire spare area. Must be used with NAND_BBT_USE_FLASH.
  */
 #define NAND_BBT_NO_OOB_BBM	0x00080000
+/*
+ * Read the OOB in raw mode when checking bad block markers. This is useful
+ * when normal mode includes a randomization step.
+ */
+#define NAND_BBT_SCANRAWMODE	0x00100000
 
 /*
  * Flag set by nand_create_default_bbt_descr(), marking that the nand_bbt_descr

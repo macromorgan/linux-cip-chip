@@ -1,0 +1,295 @@
+/*
+ * Copyright 2016 Free Electrons
+ * Copyright 2016 NextThing Co
+ *
+ * Mylène Josserand <mylene.josserand@free-electrons.com>
+ *
+ * This file is dual-licensed: you can use it either under the terms
+ * of the GPL or the X11 license, at your option. Note that this dual
+ * licensing only applies to this file, and not this project as a
+ * whole.
+ *
+ *  a) This file is free software; you can redistribute it and/or
+ *     modify it under the terms of the GNU General Public License as
+ *     published by the Free Software Foundation; either version 2 of the
+ *     License, or (at your option) any later version.
+ *
+ *     This file is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ * Or, alternatively,
+ *
+ *  b) Permission is hereby granted, free of charge, to any person
+ *     obtaining a copy of this software and associated documentation
+ *     files (the "Software"), to deal in the Software without
+ *     restriction, including without limitation the rights to use,
+ *     copy, modify, merge, publish, distribute, sublicense, and/or
+ *     sell copies of the Software, and to permit persons to whom the
+ *     Software is furnished to do so, subject to the following
+ *     conditions:
+ *
+ *     The above copyright notice and this permission notice shall be
+ *     included in all copies or substantial portions of the Software.
+ *
+ *     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ *     EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ *     OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ *     NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ *     HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ *     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ *     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ *     OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+/dts-v1/;
+#include "ntc-gr8.dtsi"
+#include "sunxi-common-regulators.dtsi"
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	model = "NextThing Crumb";
+	compatible = "nextthing,crumb", "nextthing,gr8";
+
+	aliases {
+		i2c0 = &i2c0;
+		i2c1 = &i2c1;
+		serial0 = &uart1;
+		serial1 = &uart2;
+		serial2 = &uart3;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	mmc0_pwrseq: mmc0_pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_reg_on_pin_crumb>;
+		reset-gpios = <&pio 1 10 GPIO_ACTIVE_LOW>; /* PB10 */
+	};
+
+	/*
+	 * Both LDO3 and LDO4 are used in parallel to power up the
+	 * WiFi/BT Chip.
+	 */
+	vcc_wifi: wifi_reg {
+		compatible = "coupled-voltage-regulator";
+		regulator-name = "vcc-wifi";
+		vin0-supply = <&reg_ldo3>;
+		vin1-supply = <&reg_ldo4>;
+	};
+};
+
+&codec {
+	status = "okay";
+};
+
+&ehci0 {
+	status = "okay";
+};
+
+&i2c0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins_a>;
+	status = "okay";
+
+	axp209: pmic@34 {
+		reg = <0x34>;
+
+		/*
+		* The interrupt is routed through the "External Fast
+		* Interrupt Request" pin (ball G13 of the module)
+		* directly to the main interrupt controller, without
+		* any other controller interfering.
+		*/
+		interrupts = <0>;
+	};
+};
+
+#include "axp209.dtsi"
+
+&i2c1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c1_pins_a>;
+	status = "okay";
+};
+
+&i2s0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2s0_data_pins_a>, <&i2s0_data_pins_a>;
+	status = "okay";
+};
+
+&lradc {
+	vref-supply = <&reg_ldo2>;
+	status = "okay";
+};
+
+&mmc0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&mmc0_pins_a>;
+	vmmc-supply = <&vcc_wifi>;
+	mmc-pwrseq = <&mmc0_pwrseq>;
+	bus-width = <4>;
+	non-removable;
+	status = "okay";
+};
+
+&nfc {
+	pinctrl-names = "default";
+	pinctrl-0 = <&nand_pins_a &nand_cs0_pins_a &nand_rb0_pins_a>;
+	status = "okay";
+
+	nand@0 {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		reg = <0>;
+		allwinner,rb = <0>;
+		nand-ecc-mode = "hw";
+
+		spl@0 {
+			label = "SPL";
+			reg = /bits/ 64 <0x0 0x400000>;
+		};
+
+		spl-backup@400000 {
+			label = "SPL.backup";
+			reg = /bits/ 64 <0x400000 0x400000>;
+		};
+
+		u-boot@800000 {
+			label = "U-Boot";
+			reg = /bits/ 64 <0x800000 0x400000>;
+		};
+
+		env@c00000 {
+			label = "env";
+			reg = /bits/ 64 <0xc00000 0x400000>;
+		};
+
+		rootfs@1000000 {
+			label = "rootfs";
+			reg = /bits/ 64 <0x1000000 0x1ff000000>;
+		};
+	};
+};
+
+&ohci0 {
+	status = "okay";
+};
+
+&otg_sram {
+	status = "okay";
+};
+
+&pio {
+	usb0_id_pin_crumb: usb0-id-pin@0 {
+		allwinner,pins = "PG2";
+		allwinner,function = "gpio_in";
+		allwinner,drive = <SUN4I_PINCTRL_10_MA>;
+		allwinner,pull = <SUN4I_PINCTRL_NO_PULL>;
+	};
+
+	wifi_reg_on_pin_crumb: wifi-reg-on-pin@0 {
+		allwinner,pins = "PB10";
+		allwinner,function = "gpio_out";
+		allwinner,drive = <SUN4I_PINCTRL_10_MA>;
+		allwinner,pull = <SUN4I_PINCTRL_NO_PULL>;
+	};
+};
+
+&pwm {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pwm0_pins_a>, <&pwm1_pins_a>;
+	status = "okay";
+};
+
+&reg_dcdc2 {
+	regulator-min-microvolt = <1000000>;
+	regulator-max-microvolt = <1400000>;
+	regulator-name = "vdd-cpu";
+	regulator-always-on;
+};
+
+&reg_dcdc3 {
+	regulator-min-microvolt = <1000000>;
+	regulator-max-microvolt = <1300000>;
+	regulator-name = "vdd-sys";
+	regulator-always-on;
+};
+
+&reg_ldo1 {
+	regulator-name = "vdd-rtc";
+};
+
+&reg_ldo2 {
+	regulator-min-microvolt = <2700000>;
+	regulator-max-microvolt = <3300000>;
+	regulator-name = "avcc";
+	regulator-always-on;
+};
+
+&reg_ldo3 {
+	regulator-min-microvolt = <3300000>;
+	regulator-max-microvolt = <3300000>;
+	regulator-name = "vcc-wifi-1";
+};
+
+&reg_ldo4 {
+	regulator-min-microvolt = <3300000>;
+	regulator-max-microvolt = <3300000>;
+	regulator-name = "vcc-wifi-2";
+};
+
+&uart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1_pins_a>, <&uart1_cts_rts_pins_a>;
+	status = "okay";
+};
+
+&uart2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart2_pins_a>, <&uart2_cts_rts_pins_a>;
+	status = "okay";
+};
+
+&uart3 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart3_pins_a>, <&uart3_cts_rts_pins_a>;
+	status = "okay";
+};
+
+&usb_otg {
+	/*
+	 * The GR8-EVB has a somewhat interesting design. There's a
+	 * pin supposed to control VBUS, an ID pin, a VBUS detect pin,
+	 * so everything should work just fine.
+	 *
+	 * Except that the pin supposed to control VBUS is not
+	 * connected to any controllable output, neither to the SoC
+	 * through a GPIO or to the PMIC, and it is pulled down,
+	 * meaning that we will never be able to enable VBUS on this
+	 * board.
+	 */
+	dr_mode = "otg";
+	status = "okay";
+};
+
+&usb_power_supply {
+	status = "okay";
+};
+
+&usbphy {
+	pinctrl-names = "default";
+	pinctrl-0 = <&usb0_id_pin_crumb>;
+	usb0_id_det-gpio = <&pio 6 2 GPIO_ACTIVE_HIGH>; /* PG2 */
+	usb0_vbus_power-supply = <&usb_power_supply>;
+	usb1_vbus-supply = <&reg_vcc5v0>;
+	status = "okay";
+};

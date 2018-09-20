@@ -7,6 +7,16 @@ config DRM_BRIDGE
 menu "Display Interface Bridges"
 	depends on DRM && DRM_BRIDGE
 
+config DRM_CHRONTEL_CH7033
+	tristate "Chrontel CH7033 HDMI Bridge support"
+	select DRM_KMS_HELPER
+
+config DRM_DUMB_VGA
+	tristate "Dumb RGB to VGA Bridge support"
+	select DRM_KMS_HELPER
+	help
+	  Support for passive RGB to VGA bridges
+
 config DRM_DW_HDMI
 	tristate
 	select DRM_KMS_HELPER

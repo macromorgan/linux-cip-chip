@@ -160,6 +160,12 @@ typedef enum {
 /* Device supports subpage reads */
 #define NAND_SUBPAGE_READ	0x00001000
 
+/*
+ * Some MLC NANDs need data scrambling to limit bitflips caused by repeated
+ * patterns.
+ */
+#define NAND_NEED_SCRAMBLING	0x00002000
+
 /* Options valid for Samsung large page devices */
 #define NAND_SAMSUNG_LP_OPTIONS NAND_CACHEPRG
 
@@ -670,6 +676,9 @@ struct nand_chip {
 	int (*onfi_get_features)(struct mtd_info *mtd, struct nand_chip *chip,
 			int feature_addr, uint8_t *subfeature_para);
 	int (*setup_read_retry)(struct mtd_info *mtd, int retry_mode);
+	void (*manuf_cleanup)(struct mtd_info *mtd);
+
+	void *manuf_priv;
 
 	int chip_delay;
 	unsigned int options;
@@ -795,6 +804,7 @@ struct nand_chip {
  * @onfi_timing_mode_default: the default ONFI timing mode entered after a NAND
  *			      reset. Should be deduced from timings described
  *			      in the datasheet.
+ * @pairing: The page pairing scheme used by this NAND, if any.
  *
  */
 struct nand_flash_dev {
@@ -817,6 +827,7 @@ struct nand_flash_dev {
 		uint16_t step_ds;
 	} ecc;
 	int onfi_timing_mode_default;
+	const struct mtd_pairing_scheme *pairing;
 };
 
 /**
@@ -827,10 +838,14 @@ struct nand_flash_dev {
 struct nand_manufacturers {
 	int id;
 	char *name;
+	int (*init)(struct mtd_info *mtd, const uint8_t *id);
 };
 
 extern struct nand_flash_dev nand_flash_ids[];
 extern struct nand_manufacturers nand_manuf_ids[];
+
+int hynix_nand_init(struct mtd_info *mtd, const uint8_t *id);
+int toshiba_nand_init(struct mtd_info *mtd, const uint8_t *id);
 
 extern int nand_default_bbt(struct mtd_info *mtd);
 extern int nand_markbad_bbt(struct mtd_info *mtd, loff_t offs);
@@ -1029,4 +1044,21 @@ int nand_check_erased_ecc_chunk(void *data, int datalen,
 				void *ecc, int ecclen,
 				void *extraoob, int extraooblen,
 				int threshold);
+
+/* Default write_oob implementation */
+int nand_write_oob_std(struct mtd_info *mtd, struct nand_chip *chip, int page);
+
+/* Default write_oob syndrome implementation */
+int nand_write_oob_syndrome(struct mtd_info *mtd, struct nand_chip *chip,
+			    int page);
+
+/* Default read_oob implementation */
+int nand_read_oob_std(struct mtd_info *mtd, struct nand_chip *chip, int page);
+
+/* Default read_oob syndrome implementation */
+int nand_read_oob_syndrome(struct mtd_info *mtd, struct nand_chip *chip,
+			   int page);
+
+extern const struct mtd_pairing_scheme dist3_pairing_scheme;
+extern const struct mtd_pairing_scheme dist6_pairing_scheme;
 #endif /* __LINUX_MTD_NAND_H */

@@ -24,6 +24,7 @@
 #include <linux/uio.h>
 #include <linux/notifier.h>
 #include <linux/device.h>
+#include <linux/dma-mapping.h>
 
 #include <mtd/mtd-abi.h>
 
@@ -95,7 +96,7 @@ struct mtd_oob_ops {
 };
 
 #define MTD_MAX_OOBFREE_ENTRIES_LARGE	32
-#define MTD_MAX_ECCPOS_ENTRIES_LARGE	640
+#define MTD_MAX_ECCPOS_ENTRIES_LARGE	1664
 /*
  * Internal ECC layout control structure. For historical reasons, there is a
  * similar, smaller struct nand_ecclayout_user (in mtd-abi.h) that is retained
@@ -109,7 +110,39 @@ struct nand_ecclayout {
 	struct nand_oobfree oobfree[MTD_MAX_OOBFREE_ENTRIES_LARGE];
 };
 
+/**
+ * struct mtd_pairing_info - Page pairing information
+ *
+ * @pair: represent the pair index in the paired pages table.For example, if
+ *	  page 0 and page 2 are paired together they form the first pair.
+ * @group: the group represent the bit position in the cell. For example,
+ *	   page 0 uses bit 0 and is thus part of group 0.
+ */
+struct mtd_pairing_info {
+	int pair;
+	int group;
+};
+
+/**
+ * struct mtd_pairing_scheme - Page pairing information
+ *
+ * @ngroups: number of groups. Should be related to the number of bits
+ *	     per cell.
+ * @get_info: get the paring info of a given write-unit (ie page). This
+ *	      function should fill the info struct passed in argument.
+ * @get_page: convert paring information into a write-unit (page) number.
+ */
+struct mtd_pairing_scheme {
+	int ngroups;
+	void (*get_info)(struct mtd_info *mtd, int wunit,
+			 struct mtd_pairing_info *info);
+	int (*get_wunit)(struct mtd_info *mtd,
+			 const struct mtd_pairing_info *info);
+};
+
 struct module;	/* only needed for owner field in mtd_info */
+
+struct mtd_part_ops;
 
 struct mtd_info {
 	u_char type;
@@ -129,6 +162,14 @@ struct mtd_info {
 	 * 1 or larger.
 	 */
 	uint32_t writesize;
+
+	/*
+	 * Minimal read unit size. Usually the same as the writesize but can be
+	 * smaller if the device supports reading smaller data chunks.
+	 * Particularly useful on NAND devices where you can read ECC chunks
+	 * instead of reading the full page.
+	 */
+	uint32_t readsize;
 
 	/*
 	 * Size of the write buffer used by the MTD. MTD devices having a write
@@ -169,6 +210,9 @@ struct mtd_info {
 
 	/* ECC layout structure pointer - read only! */
 	struct nand_ecclayout *ecclayout;
+
+	/* NAND pairing scheme, only provided for MLC/TLC NANDs */
+	const struct mtd_pairing_scheme *pairing;
 
 	/* the ecc step size. */
 	unsigned int ecc_step_size;
@@ -235,6 +279,8 @@ struct mtd_info {
 	int (*_get_device) (struct mtd_info *mtd);
 	void (*_put_device) (struct mtd_info *mtd);
 
+	const struct mtd_part_ops *part_ops;
+
 	/* Backing device capabilities for this device
 	 * - provides mmap capabilities
 	 */
@@ -254,6 +300,67 @@ struct mtd_info {
 	int usecount;
 };
 
+/* Our partition node structure */
+struct mtd_part {
+	struct mtd_info mtd;
+	struct mtd_info *master;
+	uint64_t offset;
+	struct list_head list;
+};
+
+static inline struct mtd_part *mtd_to_part(struct mtd_info *mtd)
+{
+	return container_of(mtd, struct mtd_part, mtd);
+}
+
+static inline void *mtd_part_get_priv(struct mtd_part *part)
+{
+	return part->mtd.priv;
+}
+
+static inline void mtd_part_set_priv(struct mtd_part *part, void *priv)
+{
+	part->mtd.priv = priv;
+}
+
+/**
+ * struct mtd_part_ops - MTD partition operations
+ * @add: add a new MTD partition and instantiate the associated data.
+ *	 You should overload the MTD callbacks if you want a specific
+ *	 behavior.
+ * @remove: remove an existing MTD partition
+ */
+struct mtd_part_ops {
+	int (*add)(struct mtd_part *part);
+	void (*remove)(struct mtd_part *part);
+};
+
+static inline int mtd_offset_to_wunit(struct mtd_info *mtd, loff_t offs)
+{
+	if (mtd->erasesize_mask)
+		offs &= mtd->erasesize_mask;
+	else
+		offs = offs % mtd->erasesize;
+
+	if (mtd->writesize_shift)
+		offs >>= mtd->writesize_shift;
+	else
+		offs %= mtd->writesize;
+
+	return offs;
+}
+
+static inline loff_t mtd_wunit_to_offset(struct mtd_info *mtd, loff_t base,
+					 int wunit)
+{
+	return base + (wunit * mtd->writesize);
+}
+
+void mtd_wunit_to_pairing_info(struct mtd_info *mtd, int wunit,
+			       struct mtd_pairing_info *info);
+int mtd_pairing_info_to_wunit(struct mtd_info *mtd,
+			      const struct mtd_pairing_info *info);
+int mtd_pairing_groups_per_eb(struct mtd_info *mtd);
 int mtd_erase(struct mtd_info *mtd, struct erase_info *instr);
 int mtd_point(struct mtd_info *mtd, loff_t from, size_t len, size_t *retlen,
 	      void **virt, resource_size_t *phys);
@@ -349,6 +456,11 @@ static inline uint32_t mtd_mod_by_ws(uint64_t sz, struct mtd_info *mtd)
 	return do_div(sz, mtd->writesize);
 }
 
+static inline int mtd_wunit_per_eb(struct mtd_info *mtd)
+{
+	return mtd->erasesize / mtd->writesize;
+}
+
 static inline int mtd_has_oob(const struct mtd_info *mtd)
 {
 	return mtd->_read_oob && mtd->_write_oob;
@@ -394,6 +506,27 @@ struct mtd_notifier {
 extern void register_mtd_user (struct mtd_notifier *new);
 extern int unregister_mtd_user (struct mtd_notifier *old);
 void *mtd_kmalloc_up_to(const struct mtd_info *mtd, size_t *size);
+
+#ifdef CONFIG_HAS_DMA
+int mtd_map_buf(struct mtd_info *mtd, struct device *dev,
+		struct sg_table *sgt, const void *buf, size_t len,
+		enum dma_data_direction dir);
+void mtd_unmap_buf(struct mtd_info *mtd, struct device *dev,
+		   struct sg_table *sgt, enum dma_data_direction dir);
+#else
+static inline int mtd_map_buf(struct mtd_info *mtd, struct device *dev,
+			      struct sg_table *sgt, const void *buf,
+			      size_t len, enum dma_data_direction dir)
+{
+	return -ENOTSUPP;
+}
+
+static void mtd_unmap_buf(struct mtd_info *mtd, struct device *dev,
+			  struct sg_table *sgt, enum dma_data_direction dir)
+{
+	return -ENOTSUPP;
+}
+#endif
 
 void mtd_erase_callback(struct erase_info *instr);
 

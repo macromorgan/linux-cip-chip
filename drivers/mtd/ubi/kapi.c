@@ -82,7 +82,7 @@ void ubi_do_get_volume_info(struct ubi_device *ubi, struct ubi_volume *vol,
 {
 	vi->vol_id = vol->vol_id;
 	vi->ubi_num = ubi->ubi_num;
-	vi->size = vol->reserved_pebs;
+	vi->size = vol->reserved_lebs;
 	vi->used_bytes = vol->used_bytes;
 	vi->vol_type = vol->vol_type;
 	vi->corrupted = vol->corrupted;
@@ -535,7 +535,7 @@ int ubi_leb_write(struct ubi_volume_desc *desc, int lnum, const void *buf,
 	if (desc->mode == UBI_READONLY || vol->vol_type == UBI_STATIC_VOLUME)
 		return -EROFS;
 
-	if (lnum < 0 || lnum >= vol->reserved_pebs || offset < 0 || len < 0 ||
+	if (lnum < 0 || lnum >= vol->reserved_lebs || offset < 0 || len < 0 ||
 	    offset + len > vol->usable_leb_size ||
 	    offset & (ubi->min_io_size - 1) || len & (ubi->min_io_size - 1))
 		return -EINVAL;
@@ -580,15 +580,12 @@ int ubi_leb_change(struct ubi_volume_desc *desc, int lnum, const void *buf,
 	if (desc->mode == UBI_READONLY || vol->vol_type == UBI_STATIC_VOLUME)
 		return -EROFS;
 
-	if (lnum < 0 || lnum >= vol->reserved_pebs || len < 0 ||
+	if (lnum < 0 || lnum >= vol->reserved_lebs || len < 0 ||
 	    len > vol->usable_leb_size || len & (ubi->min_io_size - 1))
 		return -EINVAL;
 
 	if (vol->upd_marker)
 		return -EBADF;
-
-	if (len == 0)
-		return 0;
 
 	return ubi_eba_atomic_leb_change(ubi, vol, lnum, buf, len);
 }
@@ -617,7 +614,7 @@ int ubi_leb_erase(struct ubi_volume_desc *desc, int lnum)
 	if (desc->mode == UBI_READONLY || vol->vol_type == UBI_STATIC_VOLUME)
 		return -EROFS;
 
-	if (lnum < 0 || lnum >= vol->reserved_pebs)
+	if (lnum < 0 || lnum >= vol->reserved_lebs)
 		return -EINVAL;
 
 	if (vol->upd_marker)
@@ -627,7 +624,7 @@ int ubi_leb_erase(struct ubi_volume_desc *desc, int lnum)
 	if (err)
 		return err;
 
-	return ubi_wl_flush(ubi, vol->vol_id, lnum);
+	return ubi_work_flush(ubi);
 }
 EXPORT_SYMBOL_GPL(ubi_leb_erase);
 
@@ -677,7 +674,7 @@ int ubi_leb_unmap(struct ubi_volume_desc *desc, int lnum)
 	if (desc->mode == UBI_READONLY || vol->vol_type == UBI_STATIC_VOLUME)
 		return -EROFS;
 
-	if (lnum < 0 || lnum >= vol->reserved_pebs)
+	if (lnum < 0 || lnum >= vol->reserved_lebs)
 		return -EINVAL;
 
 	if (vol->upd_marker)
@@ -713,7 +710,7 @@ int ubi_leb_map(struct ubi_volume_desc *desc, int lnum)
 	if (desc->mode == UBI_READONLY || vol->vol_type == UBI_STATIC_VOLUME)
 		return -EROFS;
 
-	if (lnum < 0 || lnum >= vol->reserved_pebs)
+	if (lnum < 0 || lnum >= vol->reserved_lebs)
 		return -EINVAL;
 
 	if (vol->upd_marker)
@@ -748,7 +745,7 @@ int ubi_is_mapped(struct ubi_volume_desc *desc, int lnum)
 
 	dbg_gen("test LEB %d:%d", vol->vol_id, lnum);
 
-	if (lnum < 0 || lnum >= vol->reserved_pebs)
+	if (lnum < 0 || lnum >= vol->reserved_lebs)
 		return -EINVAL;
 
 	if (vol->upd_marker)
@@ -779,33 +776,6 @@ int ubi_sync(int ubi_num)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(ubi_sync);
-
-/**
- * ubi_flush - flush UBI work queue.
- * @ubi_num: UBI device to flush work queue
- * @vol_id: volume id to flush for
- * @lnum: logical eraseblock number to flush for
- *
- * This function executes all pending works for a particular volume id / logical
- * eraseblock number pair. If either value is set to %UBI_ALL, then it acts as
- * a wildcard for all of the corresponding volume numbers or logical
- * eraseblock numbers. It returns zero in case of success and a negative error
- * code in case of failure.
- */
-int ubi_flush(int ubi_num, int vol_id, int lnum)
-{
-	struct ubi_device *ubi;
-	int err = 0;
-
-	ubi = ubi_get_device(ubi_num);
-	if (!ubi)
-		return -ENODEV;
-
-	err = ubi_wl_flush(ubi, vol_id, lnum);
-	ubi_put_device(ubi);
-	return err;
-}
-EXPORT_SYMBOL_GPL(ubi_flush);
 
 BLOCKING_NOTIFIER_HEAD(ubi_notifiers);
 

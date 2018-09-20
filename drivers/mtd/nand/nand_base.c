@@ -566,8 +566,9 @@ void nand_wait_ready(struct mtd_info *mtd)
 		cond_resched();
 	} while (time_before(jiffies, timeo));
 
-	pr_warn_ratelimited(
-		"timeout while waiting for chip to become ready\n");
+	if (!chip->dev_ready(mtd))
+		pr_warn_ratelimited("timeout while waiting for chip to become ready\n");
+
 out:
 	led_trigger_event(nand_led_trigger, LED_OFF);
 }
@@ -1890,13 +1891,13 @@ static int nand_read(struct mtd_info *mtd, loff_t from, size_t len,
  * @chip: nand chip info structure
  * @page: page number to read
  */
-static int nand_read_oob_std(struct mtd_info *mtd, struct nand_chip *chip,
-			     int page)
+int nand_read_oob_std(struct mtd_info *mtd, struct nand_chip *chip, int page)
 {
 	chip->cmdfunc(mtd, NAND_CMD_READOOB, 0, page);
 	chip->read_buf(mtd, chip->oob_poi, mtd->oobsize);
 	return 0;
 }
+EXPORT_SYMBOL(nand_read_oob_std);
 
 /**
  * nand_read_oob_syndrome - [REPLACEABLE] OOB data read function for HW ECC
@@ -1905,8 +1906,8 @@ static int nand_read_oob_std(struct mtd_info *mtd, struct nand_chip *chip,
  * @chip: nand chip info structure
  * @page: page number to read
  */
-static int nand_read_oob_syndrome(struct mtd_info *mtd, struct nand_chip *chip,
-				  int page)
+int nand_read_oob_syndrome(struct mtd_info *mtd, struct nand_chip *chip,
+			   int page)
 {
 	int length = mtd->oobsize;
 	int chunk = chip->ecc.bytes + chip->ecc.prepad + chip->ecc.postpad;
@@ -1934,6 +1935,7 @@ static int nand_read_oob_syndrome(struct mtd_info *mtd, struct nand_chip *chip,
 
 	return 0;
 }
+EXPORT_SYMBOL(nand_read_oob_syndrome);
 
 /**
  * nand_write_oob_std - [REPLACEABLE] the most common OOB data write function
@@ -1941,8 +1943,7 @@ static int nand_read_oob_syndrome(struct mtd_info *mtd, struct nand_chip *chip,
  * @chip: nand chip info structure
  * @page: page number to write
  */
-static int nand_write_oob_std(struct mtd_info *mtd, struct nand_chip *chip,
-			      int page)
+int nand_write_oob_std(struct mtd_info *mtd, struct nand_chip *chip, int page)
 {
 	int status = 0;
 	const uint8_t *buf = chip->oob_poi;
@@ -1957,6 +1958,7 @@ static int nand_write_oob_std(struct mtd_info *mtd, struct nand_chip *chip,
 
 	return status & NAND_STATUS_FAIL ? -EIO : 0;
 }
+EXPORT_SYMBOL(nand_write_oob_std);
 
 /**
  * nand_write_oob_syndrome - [REPLACEABLE] OOB data write function for HW ECC
@@ -1965,8 +1967,8 @@ static int nand_write_oob_std(struct mtd_info *mtd, struct nand_chip *chip,
  * @chip: nand chip info structure
  * @page: page number to write
  */
-static int nand_write_oob_syndrome(struct mtd_info *mtd,
-				   struct nand_chip *chip, int page)
+int nand_write_oob_syndrome(struct mtd_info *mtd, struct nand_chip *chip,
+			    int page)
 {
 	int chunk = chip->ecc.bytes + chip->ecc.prepad + chip->ecc.postpad;
 	int eccsize = chip->ecc.size, length = mtd->oobsize;
@@ -2016,6 +2018,7 @@ static int nand_write_oob_syndrome(struct mtd_info *mtd,
 
 	return status & NAND_STATUS_FAIL ? -EIO : 0;
 }
+EXPORT_SYMBOL(nand_write_oob_syndrome);
 
 /**
  * nand_do_read_oob - [INTERN] NAND read out-of-band
@@ -3768,6 +3771,7 @@ static bool find_full_id_nand(struct mtd_info *mtd, struct nand_chip *chip,
 		mtd->writesize = type->pagesize;
 		mtd->erasesize = type->erasesize;
 		mtd->oobsize = type->oobsize;
+		mtd->pairing = type->pairing;
 
 		chip->bits_per_cell = nand_get_bits_per_cell(id_data[2]);
 		chip->chipsize = (uint64_t)type->chipsize << 20;
@@ -3929,6 +3933,13 @@ ident_done:
 	if (mtd->writesize > 512 && chip->cmdfunc == nand_command)
 		chip->cmdfunc = nand_command_lp;
 
+	if (nand_manuf_ids[maf_idx].init) {
+		int err;
+		err = nand_manuf_ids[maf_idx].init(mtd, id_data);
+		if (err)
+			return ERR_PTR(err);
+	}
+
 	pr_info("device found, Manufacturer ID: 0x%02x, Chip ID: 0x%02x\n",
 		*maf_id, *dev_id);
 
@@ -4083,6 +4094,102 @@ static bool nand_ecc_strength_good(struct mtd_info *mtd)
 
 	return corr >= ds_corr && ecc->strength >= chip->ecc_strength_ds;
 }
+
+static void nand_pairing_dist3_get_info(struct mtd_info *mtd, int page,
+					struct mtd_pairing_info *info)
+{
+	int lastpage = (mtd->erasesize / mtd->writesize) - 1;
+	int dist = 3;
+
+	if (page == lastpage)
+		dist = 2;
+
+	if (!page || (page & 1)) {
+		info->group = 0;
+		info->pair = (page + 1) / 2;
+	} else {
+		info->group = 1;
+		info->pair = (page + 1 - dist) / 2;
+	}
+}
+
+static int nand_pairing_dist3_get_wunit(struct mtd_info *mtd,
+					const struct mtd_pairing_info *info)
+{
+	int lastpair = ((mtd->erasesize / mtd->writesize) - 1) / 2;
+	int page = info->pair * 2;
+	int dist = 3;
+
+	if (!info->group && !info->pair)
+		return 0;
+
+	if (info->pair == lastpair && info->group)
+		dist = 2;
+
+	if (!info->group)
+		page--;
+	else if (info->pair)
+		page += dist - 1;
+
+	if (page >= mtd->erasesize / mtd->writesize)
+		return -EINVAL;
+
+	return page;
+}
+
+const struct mtd_pairing_scheme dist3_pairing_scheme = {
+	.ngroups = 2,
+	.get_info = nand_pairing_dist3_get_info,
+	.get_wunit = nand_pairing_dist3_get_wunit,
+};
+EXPORT_SYMBOL_GPL(dist3_pairing_scheme);
+
+static void nand_pairing_dist6_get_info(struct mtd_info *mtd, int page,
+					struct mtd_pairing_info *info)
+{
+	int lastpage = (mtd->erasesize / mtd->writesize) - 1;
+	int half = page / 2;
+	int dist = 6;
+
+	if (half == lastpage / 2)
+		dist = 4;
+
+	if (!half  || (half & 1)) {
+		info->group = 0;
+		info->pair = (page + 2) / 2;
+	} else {
+		info->group = 1;
+		info->pair = (page + 2 - dist) / 2;
+	}
+}
+
+static int nand_pairing_dist6_get_wunit(struct mtd_info *mtd,
+				       const struct mtd_pairing_info *info)
+{
+	int lastpair = ((mtd->erasesize / mtd->writesize) - 1) / 2;
+	int page = info->pair * 2;
+	int dist = 6;
+
+	if (!info->group && !info->pair)
+		return 0;
+
+	if (info->pair >= lastpair - 1 && info->group)
+		dist = 4;
+
+	if (!info->group)
+		page += 2;
+	else
+		page += dist - 2;
+
+	return page;
+}
+
+const struct mtd_pairing_scheme dist6_pairing_scheme = {
+	.ngroups = 2,
+	.get_info = nand_pairing_dist6_get_info,
+	.get_wunit = nand_pairing_dist6_get_wunit,
+};
+EXPORT_SYMBOL_GPL(dist6_pairing_scheme);
 
 /**
  * nand_scan_tail - [NAND Interface] Scan for the NAND device
@@ -4377,6 +4484,10 @@ int nand_scan_tail(struct mtd_info *mtd)
 	mtd->ecclayout = ecc->layout;
 	mtd->ecc_strength = ecc->strength;
 	mtd->ecc_step_size = ecc->size;
+
+	if (NAND_HAS_SUBPAGE_READ(chip))
+		mtd->readsize = mtd->ecc_step_size;
+
 	/*
 	 * Initialize bitflip_threshold to its default prior scan_bbt() call.
 	 * scan_bbt() might invoke mtd_read(), thus bitflip_threshold must be

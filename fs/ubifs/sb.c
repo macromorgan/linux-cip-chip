@@ -764,6 +764,29 @@ out:
 	return err;
 }
 
+int ubifs_unmap_empty_lebs(struct ubifs_info *c)
+{
+	struct ubifs_lprops *lprops;
+	int lnum, err = 0;
+
+	/* Unmap all empty LEBs in the main area */
+	for (lnum = c->main_first; lnum < c->leb_cnt; lnum++) {
+		lprops = ubifs_lpt_lookup(c, lnum);
+		if (IS_ERR(lprops)) {
+			err = PTR_ERR(lprops);
+			break;
+		}
+
+		if (lprops->free  == c->leb_size) {
+			err = ubifs_leb_unmap(c, lnum);
+			if (err)
+				break;
+		}
+	}
+
+	return err;
+}
+
 /**
  * ubifs_fixup_free_space - find & fix all LEBs with free space.
  * @c: UBIFS file-system description object

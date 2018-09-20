@@ -16,6 +16,8 @@
 #include <linux/types.h>
 #include <linux/delay.h>
 
+#include <linux/dip-manager.h>
+
 #include "../w1.h"
 #include "../w1_int.h"
 #include "../w1_family.h"
@@ -280,7 +282,36 @@ static const struct attribute_group *w1_f2d_groups[] = {
 	NULL,
 };
 
+#if IS_ENABLED(CONFIG_CAPE_DS2431)
+static int chip_dip_callback(struct w1_slave *sl)
+{
+	struct dip_header *header;
+	int i;
+
+	header = devm_kzalloc(&sl->dev, sizeof(struct dip_header),
+			      GFP_KERNEL);
+	if (!header)
+		return -ENOMEM;
+
+	/*
+	 * Here, sizeof(struct cape_header) is a multiple of CAPE_DS2431_CHUNK
+	 * FIXME: do a proper solution
+	 */
+	for (i = 0; i < sizeof(struct dip_header); i += 8) {
+		if (w1_f2d_readblock(sl, i, 8, &((u8 *)header)[i]))
+			return -EIO;
+	}
+
+	dip_manager_insert(&sl->dev, header);
+
+	return 0;
+}
+#endif
+
 static struct w1_family_ops w1_f2d_fops = {
+#if IS_ENABLED(CONFIG_CAPE_DS2431)
+	.callback	= &chip_dip_callback,
+#endif
 	.groups		= w1_f2d_groups,
 };
 

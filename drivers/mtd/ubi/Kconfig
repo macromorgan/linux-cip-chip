@@ -103,4 +103,20 @@ config MTD_UBI_BLOCK
 
 	   If in doubt, say "N".
 
+config MTD_UBI_CONSOLIDATE
+	bool "LEB consolidation support"
+	default n
+
+config MTD_UBI_READ_COUNTER
+	bool "Maintain a per block read counter"
+	default n
+	help
+	   This option enables a per block read counter such that userspace can
+	   query how often a block has been read since erasure.
+	   Enable this if you plan to use UBI on MLC NAND in conjunction with
+	   ubihealthd. It will increase UBI's memory footprint by
+	   sizeof(unsigned int) * number of eraseblocks.
+
+	   If in doubt, say "N".
+
 endif # MTD_UBI

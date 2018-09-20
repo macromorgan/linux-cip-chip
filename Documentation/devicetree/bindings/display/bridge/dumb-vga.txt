@@ -1,0 +1,40 @@
+Passive RGB to VGA bridge
+-------------------------
+
+This binding is aimed for entirely passive RGB to VGA bridges that do not
+require any configuration.
+
+Required properties:
+
+- compatible: Should be "dumb-vga-bridge"
+
+Optional properties:
+
+- ddc-i2c-bus: phandle to the i2c bus used to communicate with the monitor
+
+Required nodes:
+
+This device has one video port. Its connection is modelled using the OF
+graph bindings specified in Documentation/devicetree/bindings/graph.txt. This
+connection is meant to be the RGB input bus.
+
+
+Example
+-------
+
+bridge {
+        compatible = "dumb-vga-bridge";
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        port@0 {
+                reg = <0>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                vga_input: endpoint@0 {
+                        reg = <0>;
+                        remote-endpoint = <&tcon0_out_vga>;
+               };
+        };
+};

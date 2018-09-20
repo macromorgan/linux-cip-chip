@@ -130,7 +130,9 @@ int hci_uart_tx_wakeup(struct hci_uart *hu)
 
 	BT_DBG("");
 
-	schedule_work(&hu->write_work);
+	/* Don't schedule the work if the device is being closed. */
+	if (!test_bit(HCI_UART_CLOSING, &hu->flags))
+		schedule_work(&hu->write_work);
 
 	return 0;
 }
@@ -170,6 +172,17 @@ restart:
 		goto restart;
 
 	clear_bit(HCI_UART_SENDING, &hu->tx_state);
+
+	/*
+	 * One last check to make sure hci_uart_tx_wakeup() did not set
+	 * HCI_UART_TX_WAKEUP while we where clearing HCI_UART_SENDING.
+	 * The work might have been scheduled by someone else in the
+	 * meantime, in this case we return directly.
+	 */
+	if (test_bit(HCI_UART_TX_WAKEUP, &hu->tx_state) &&
+	    !test_and_set_bit(HCI_UART_SENDING, &hu->tx_state))
+		goto restart;
+
 }
 
 static void hci_uart_init_work(struct work_struct *work)
@@ -180,12 +193,15 @@ static void hci_uart_init_work(struct work_struct *work)
 	if (!test_and_clear_bit(HCI_UART_INIT_PENDING, &hu->hdev_flags))
 		return;
 
+	if (test_bit(HCI_UART_CLOSING, &hu->flags)) {
+		BT_DBG("HCI device is being closed, don't register it.");
+		return;
+	}
+
 	err = hci_register_dev(hu->hdev);
 	if (err < 0) {
 		BT_ERR("Can't register HCI device");
-		hci_free_dev(hu->hdev);
-		hu->hdev = NULL;
-		hu->proto->close(hu);
+		return;
 	}
 
 	set_bit(HCI_UART_REGISTERED, &hu->flags);
@@ -495,7 +511,13 @@ static void hci_uart_tty_close(struct tty_struct *tty)
 	if (hdev)
 		hci_uart_close(hdev);
 
+	/*
+	 * Set the closing bit to make sure nobody re-schedules the write work
+	 * in our back.
+	 */
+	set_bit(HCI_UART_CLOSING, &hu->flags);
 	cancel_work_sync(&hu->write_work);
+	cancel_work_sync(&hu->init_ready);
 
 	if (test_and_clear_bit(HCI_UART_PROTO_SET, &hu->flags)) {
 		if (hdev) {

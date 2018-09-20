@@ -374,6 +374,68 @@ static int mtd_reboot_notifier(struct notifier_block *n, unsigned long state,
 }
 
 /**
+ *	mtd_wunit_to_pairing_info - get pairing information of a wunit
+ *	@mtd: pointer to new MTD device info structure
+ *	@wunit: the write unit we are interrested in
+ *	@info: pairing information struct
+ *
+ *	Retrieve pairing information associated to the wunit.
+ *	This is mainly useful when dealing with MLC/TLC NANDs where pages
+ *	can be paired together, and where programming a page may influence
+ *	the page it is paired with.
+ *	The notion of page is replaced by the term wunit (write-unit).
+ */
+void mtd_wunit_to_pairing_info(struct mtd_info *mtd, int wunit,
+			       struct mtd_pairing_info *info)
+{
+	if (!mtd->pairing || !mtd->pairing->get_info) {
+		info->group = 0;
+		info->pair = wunit;
+	} else {
+		mtd->pairing->get_info(mtd, wunit, info);
+	}
+}
+EXPORT_SYMBOL_GPL(mtd_wunit_to_pairing_info);
+
+/**
+ *	mtd_wunit_to_pairing_info - get wunit from pairing information
+ *	@mtd: pointer to new MTD device info structure
+ *	@info: pairing information struct
+ *
+ *	Return a positive number representing the wunit associated to the
+ *	info struct, or a negative error code.
+ */
+int mtd_pairing_info_to_wunit(struct mtd_info *mtd,
+			      const struct mtd_pairing_info *info)
+{
+	if (!mtd->pairing || !mtd->pairing->get_info) {
+		if (info->group)
+			return -EINVAL;
+
+		return info->pair;
+	}
+
+	return mtd->pairing->get_wunit(mtd, info);
+}
+EXPORT_SYMBOL_GPL(mtd_pairing_info_to_wunit);
+
+/**
+ *	mtd_pairing_groups_per_eb - get the number of pairing groups per erase
+ *				    block
+ *	@mtd: pointer to new MTD device info structure
+ *
+ *	Return the number of pairing groups per erase block.
+ */
+int mtd_pairing_groups_per_eb(struct mtd_info *mtd)
+{
+	if (!mtd->pairing || !mtd->pairing->ngroups)
+		return 1;
+
+	return mtd->pairing->ngroups;
+}
+EXPORT_SYMBOL_GPL(mtd_pairing_groups_per_eb);
+
+/**
  *	add_mtd_device - register an MTD device
  *	@mtd: pointer to new MTD device info structure
  *
@@ -408,6 +470,9 @@ int add_mtd_device(struct mtd_info *mtd)
 
 	mtd->index = i;
 	mtd->usecount = 0;
+
+	if (!mtd->readsize)
+		mtd->readsize = mtd->writesize;
 
 	/* default value if not set by driver */
 	if (mtd->bitflip_threshold == 0)
@@ -1133,6 +1198,8 @@ EXPORT_SYMBOL_GPL(mtd_block_isbad);
 
 int mtd_block_markbad(struct mtd_info *mtd, loff_t ofs)
 {
+	WARN(1, "mtd_block_markbad being called\n");
+
 	if (!mtd->_block_markbad)
 		return -EOPNOTSUPP;
 	if (ofs < 0 || ofs >= mtd->size)
@@ -1246,6 +1313,43 @@ void *mtd_kmalloc_up_to(const struct mtd_info *mtd, size_t *size)
 	return kmalloc(*size, GFP_KERNEL);
 }
 EXPORT_SYMBOL_GPL(mtd_kmalloc_up_to);
+
+#ifdef CONFIG_HAS_DMA
+int mtd_map_buf(struct mtd_info *mtd, struct device *dev,
+		struct sg_table *sgt, const void *buf, size_t len,
+		enum dma_data_direction dir)
+{
+	int ret;
+
+	ret = sg_alloc_table_from_buf(sgt, buf, len, 0, 0, 0, GFP_KERNEL);
+	if (ret)
+		return ret;
+
+	ret = dma_map_sg(dev, sgt->sgl, sgt->nents, dir);
+	if (!ret)
+		ret = -ENOMEM;
+
+	if (ret < 0) {
+		sg_free_table(sgt);
+		return ret;
+	}
+
+	sgt->nents = ret;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mtd_map_buf);
+
+void mtd_unmap_buf(struct mtd_info *mtd, struct device *dev,
+		   struct sg_table *sgt, enum dma_data_direction dir)
+{
+	if (sgt->orig_nents) {
+		dma_unmap_sg(dev, sgt->sgl, sgt->orig_nents, dir);
+		sg_free_table(sgt);
+	}
+}
+EXPORT_SYMBOL_GPL(mtd_unmap_buf);
+#endif /* !CONFIG_HAS_DMA */
 
 #ifdef CONFIG_PROC_FS
 

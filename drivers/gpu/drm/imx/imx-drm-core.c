@@ -313,6 +313,7 @@ static int imx_drm_driver_load(struct drm_device *drm, unsigned long flags)
 		dev_warn(drm->dev, "Invalid legacyfb_depth.  Defaulting to 16bpp\n");
 		legacyfb_depth = 16;
 	}
+	drm_helper_disable_unused_functions(drm);
 	imxdrm->fbhelper = drm_fbdev_cma_init(drm, legacyfb_depth,
 				drm->mode_config.num_crtc, MAX_CRTC);
 	if (IS_ERR(imxdrm->fbhelper)) {
@@ -380,7 +381,7 @@ int imx_drm_add_crtc(struct drm_device *drm, struct drm_crtc *crtc,
 			imx_drm_crtc->imx_drm_helper_funcs.crtc_helper_funcs);
 
 	drm_crtc_init_with_planes(drm, crtc, primary_plane, NULL,
-			imx_drm_crtc->imx_drm_helper_funcs.crtc_funcs);
+			imx_drm_crtc->imx_drm_helper_funcs.crtc_funcs, NULL);
 
 	return 0;
 

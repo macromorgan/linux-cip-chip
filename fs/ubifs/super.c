@@ -1289,6 +1289,12 @@ static int mount_ubifs(struct ubifs_info *c)
 			goto out_lpt;
 	}
 
+	if (!c->ro_mount) {
+		err = ubifs_unmap_empty_lebs(c);
+		if (err)
+			goto out_lpt;
+	}
+
 	if (!c->ro_mount && !c->need_recovery) {
 		/*
 		 * Set the "dirty" flag so that if we reboot uncleanly we

@@ -415,7 +415,7 @@ static long vol_cdev_ioctl(struct file *file, unsigned int cmd,
 			break;
 		}
 
-		rsvd_bytes = (long long)vol->reserved_pebs *
+		rsvd_bytes = (long long)vol->reserved_lebs *
 					ubi->leb_size-vol->data_pad;
 		if (bytes < 0 || bytes > rsvd_bytes) {
 			err = -EINVAL;
@@ -454,7 +454,7 @@ static long vol_cdev_ioctl(struct file *file, unsigned int cmd,
 
 		/* Validate the request */
 		err = -EINVAL;
-		if (req.lnum < 0 || req.lnum >= vol->reserved_pebs ||
+		if (req.lnum < 0 || req.lnum >= vol->reserved_lebs ||
 		    req.bytes < 0 || req.bytes > vol->usable_leb_size)
 			break;
 
@@ -485,7 +485,7 @@ static long vol_cdev_ioctl(struct file *file, unsigned int cmd,
 			break;
 		}
 
-		if (lnum < 0 || lnum >= vol->reserved_pebs) {
+		if (lnum < 0 || lnum >= vol->reserved_lebs) {
 			err = -EINVAL;
 			break;
 		}
@@ -495,7 +495,7 @@ static long vol_cdev_ioctl(struct file *file, unsigned int cmd,
 		if (err)
 			break;
 
-		err = ubi_wl_flush(ubi, UBI_ALL, UBI_ALL);
+		err = ubi_work_flush(ubi);
 		break;
 	}
 
@@ -909,7 +909,7 @@ static long ubi_cdev_ioctl(struct file *file, unsigned int cmd,
 	/* Re-size volume command */
 	case UBI_IOCRSVOL:
 	{
-		int pebs;
+		int lebs;
 		struct ubi_rsvol_req req;
 
 		dbg_gen("re-size volume");
@@ -929,11 +929,11 @@ static long ubi_cdev_ioctl(struct file *file, unsigned int cmd,
 			break;
 		}
 
-		pebs = div_u64(req.bytes + desc->vol->usable_leb_size - 1,
+		lebs = div_u64(req.bytes + desc->vol->usable_leb_size - 1,
 			       desc->vol->usable_leb_size);
 
 		mutex_lock(&ubi->device_mutex);
-		err = ubi_resize_volume(desc, pebs);
+		err = ubi_resize_volume(desc, lebs);
 		mutex_unlock(&ubi->device_mutex);
 		ubi_close_volume(desc);
 		break;
@@ -959,6 +959,59 @@ static long ubi_cdev_ioctl(struct file *file, unsigned int cmd,
 		}
 
 		err = rename_volumes(ubi, req);
+		kfree(req);
+		break;
+	}
+
+	/* Check a specific PEB for bitflips and scrub it if needed */
+	case UBI_IOCRPEB:
+	{
+		int pnum;
+
+		err = get_user(pnum, (__user int32_t *)argp);
+		if (err) {
+			err = -EFAULT;
+			break;
+		}
+
+		err = ubi_bitflip_check(ubi, pnum, 0);
+		break;
+	}
+
+	/* Force scrubbing for a specific PEB */
+	case UBI_IOCSPEB:
+	{
+		int pnum;
+
+		err = get_user(pnum, (__user int32_t *)argp);
+		if (err) {
+			err = -EFAULT;
+			break;
+		}
+
+		err = ubi_bitflip_check(ubi, pnum, 1);
+		break;
+	}
+	/* Get UBI wear leveling stats */
+	case UBI_IOCSTATS:
+	{
+		struct ubi_stats_req *req;
+		struct ubi_stats_req __user *ureq = argp;
+
+		req = kmalloc(sizeof(struct ubi_stats_req), GFP_KERNEL);
+		if (!req) {
+			err = -ENOMEM;
+			break;
+		}
+
+		err = copy_from_user(req, argp, sizeof(struct ubi_stats_req));
+		if (err) {
+			kfree(req);
+			err = -EFAULT;
+			break;
+		}
+
+		err = ubi_wl_report_stats(ubi, req, ureq->stats);
 		kfree(req);
 		break;
 	}

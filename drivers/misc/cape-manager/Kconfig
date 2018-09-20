@@ -1,0 +1,16 @@
+menuconfig CAPE_MANAGER
+	bool "Cape manager support"
+	default n
+	depends on OF && OF_OVERLAY
+	help
+	  Cape Managers.
+
+if CAPE_MANAGER
+
+config CAPE_DS2431
+	bool "ID on the DS2431 EEPROM"
+	depends on W1
+	help
+	  Pouet.
+
+endif

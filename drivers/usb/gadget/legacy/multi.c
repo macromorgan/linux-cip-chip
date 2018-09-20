@@ -186,7 +186,7 @@ err_func_rndis:
 	return ret;
 }
 
-static __ref int rndis_config_register(struct usb_composite_dev *cdev)
+static int rndis_config_register(struct usb_composite_dev *cdev)
 {
 	static struct usb_configuration config = {
 		.bConfigurationValue	= MULTI_RNDIS_CONFIG_NUM,
@@ -201,7 +201,7 @@ static __ref int rndis_config_register(struct usb_composite_dev *cdev)
 
 #else
 
-static __ref int rndis_config_register(struct usb_composite_dev *cdev)
+static int rndis_config_register(struct usb_composite_dev *cdev)
 {
 	return 0;
 }
@@ -269,7 +269,7 @@ err_func_ecm:
 	return ret;
 }
 
-static __ref int cdc_config_register(struct usb_composite_dev *cdev)
+static int cdc_config_register(struct usb_composite_dev *cdev)
 {
 	static struct usb_configuration config = {
 		.bConfigurationValue	= MULTI_CDC_CONFIG_NUM,
@@ -284,7 +284,7 @@ static __ref int cdc_config_register(struct usb_composite_dev *cdev)
 
 #else
 
-static __ref int cdc_config_register(struct usb_composite_dev *cdev)
+static int cdc_config_register(struct usb_composite_dev *cdev)
 {
 	return 0;
 }
@@ -295,7 +295,7 @@ static __ref int cdc_config_register(struct usb_composite_dev *cdev)
 
 /****************************** Gadget Bind ******************************/
 
-static int __ref multi_bind(struct usb_composite_dev *cdev)
+static int multi_bind(struct usb_composite_dev *cdev)
 {
 	struct usb_gadget *gadget = cdev->gadget;
 #ifdef CONFIG_USB_G_MULTI_CDC

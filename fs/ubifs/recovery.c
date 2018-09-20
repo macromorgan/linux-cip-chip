@@ -533,7 +533,7 @@ static int fix_unclean_leb(struct ubifs_info *c, struct ubifs_scan_leb *sleb,
 		dbg_rcvry("fixing LEB %d start %d endpt %d",
 			  lnum, start, sleb->endpt);
 		if (endpt == 0) {
-			err = ubifs_leb_unmap(c, lnum);
+			err = ubifs_leb_change(c, lnum, NULL, 0);
 			if (err)
 				return err;
 		} else {
@@ -936,7 +936,7 @@ static int recover_head(struct ubifs_info *c, int lnum, int offs, void *sbuf)
 	if (err || !is_empty(sbuf, len)) {
 		dbg_rcvry("cleaning head at %d:%d", lnum, offs);
 		if (offs == 0)
-			return ubifs_leb_unmap(c, lnum);
+			return ubifs_leb_change(c, lnum, NULL, 0);
 		err = ubifs_leb_read(c, lnum, sbuf, 0, offs, 1);
 		if (err)
 			return err;
@@ -1001,7 +1001,7 @@ static int clean_an_unclean_leb(struct ubifs_info *c,
 
 	if (len == 0) {
 		/* Nothing to read, just unmap it */
-		return ubifs_leb_unmap(c, lnum);
+		return ubifs_leb_change(c, lnum, NULL, 0);
 	}
 
 	err = ubifs_leb_read(c, lnum, buf, offs, len, 0);

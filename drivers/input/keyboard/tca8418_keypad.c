@@ -361,7 +361,7 @@ static int tca8418_keypad_probe(struct i2c_client *client,
 		irq = gpio_to_irq(irq);
 
 	error = devm_request_threaded_irq(dev, irq, NULL, tca8418_irq_handler,
-					  IRQF_TRIGGER_FALLING |
+					  IRQF_TRIGGER_LOW |
 						IRQF_SHARED |
 						IRQF_ONESHOT,
 					  client->name, keypad_data);

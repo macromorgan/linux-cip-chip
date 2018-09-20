@@ -170,6 +170,13 @@
 /* Re-name volumes */
 #define UBI_IOCRNVOL _IOW(UBI_IOC_MAGIC, 3, struct ubi_rnvol_req)
 
+/* Read the specified PEB and scrub it if there are bitflips */
+#define UBI_IOCRPEB _IOW(UBI_IOC_MAGIC, 4, __s32)
+/* Force scrubbing on the specified PEB */
+#define UBI_IOCSPEB _IOW(UBI_IOC_MAGIC, 5, __s32)
+/* Read wear leveling stats */
+#define UBI_IOCSTATS _IOW(UBI_IOC_MAGIC, 6, struct ubi_stats_req)
+
 /* ioctl commands of the UBI control character device */
 
 #define UBI_CTRL_IOC_MAGIC 'o'
@@ -441,5 +448,35 @@ struct ubi_set_vol_prop_req {
 struct ubi_blkcreate_req {
 	__s8  padding[128];
 }  __packed;
+
+/**
+ * struct ubi_stats_entry - data structure for per eraseblock wear leveling
+ *                          statistics.
+ * @pnum: eraseblock to which this entry belongs
+ * @ec: erase count
+ * @rc: reads since last erase
+ * @padding: reserved for future use
+ */
+struct ubi_stats_entry {
+	__s32 pnum;
+	__s32 ec;
+	__s32 rc;
+	__s32 padding;
+} __packed;
+
+/**
+ * struct ubi_stats_req - data structure used to query wear leveling stats.
+ * @req_len: size of this struct ubi_stats_req
+ * @req_pnum: eraseblock to query, if set to -1, stats for all eraseblocks are
+ *            returned
+ * @padding: reserved for future use
+ * @stats: output buffer for eraseblock stats
+ */
+struct ubi_stats_req {
+	__s32 req_len;
+	__s32 req_pnum;
+	__s32 padding[2];
+	struct ubi_stats_entry stats[0];
+} __packed;
 
 #endif /* __UBI_USER_H__ */

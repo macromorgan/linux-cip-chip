@@ -304,9 +304,10 @@ err_drm_gem_cma_free_object:
 	return ret;
 }
 
-static const struct drm_fb_helper_funcs drm_fb_cma_helper_funcs = {
+const struct drm_fb_helper_funcs drm_fb_cma_helper_funcs = {
 	.fb_probe = drm_fbdev_cma_create,
 };
+EXPORT_SYMBOL(drm_fb_cma_helper_funcs);
 
 /**
  * drm_fbdev_cma_init() - Allocate and initializes a drm_fbdev_cma struct
@@ -347,9 +348,6 @@ struct drm_fbdev_cma *drm_fbdev_cma_init(struct drm_device *dev,
 		goto err_drm_fb_helper_fini;
 
 	}
-
-	/* disable all the possible outputs/crtcs before entering KMS mode */
-	drm_helper_disable_unused_functions(dev);
 
 	ret = drm_fb_helper_initial_config(helper, preferred_bpp);
 	if (ret < 0) {

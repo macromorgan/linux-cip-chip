@@ -56,7 +56,7 @@ void ubi_dump_vid_hdr(const struct ubi_vid_hdr *vid_hdr);
 void ubi_dump_vol_info(const struct ubi_volume *vol);
 void ubi_dump_vtbl_record(const struct ubi_vtbl_record *r, int idx);
 void ubi_dump_av(const struct ubi_ainf_volume *av);
-void ubi_dump_aeb(const struct ubi_ainf_peb *aeb, int type);
+void ubi_dump_aeb(const struct ubi_ainf_leb *aeb, int type);
 void ubi_dump_mkvol_req(const struct ubi_mkvol_req *req);
 int ubi_self_check_all_ff(struct ubi_device *ubi, int pnum, int offset,
 			  int len);
@@ -64,18 +64,6 @@ int ubi_debugfs_init(void);
 void ubi_debugfs_exit(void);
 int ubi_debugfs_init_dev(struct ubi_device *ubi);
 void ubi_debugfs_exit_dev(struct ubi_device *ubi);
-
-/**
- * ubi_dbg_is_bgt_disabled - if the background thread is disabled.
- * @ubi: UBI device description object
- *
- * Returns non-zero if the UBI background thread is disabled for testing
- * purposes.
- */
-static inline int ubi_dbg_is_bgt_disabled(const struct ubi_device *ubi)
-{
-	return ubi->dbg.disable_bgt;
-}
 
 /**
  * ubi_dbg_is_bitflip - if it is time to emulate a bit-flip.
@@ -131,6 +119,11 @@ static inline int ubi_dbg_chk_gen(const struct ubi_device *ubi)
 static inline int ubi_dbg_chk_fastmap(const struct ubi_device *ubi)
 {
 	return ubi->dbg.chk_fastmap;
+}
+
+static inline int ubi_dbg_force_leb_consolidation(struct ubi_device *ubi)
+{
+	return ubi->dbg.force_leb_consolidation;
 }
 
 static inline void ubi_enable_dbg_chk_fastmap(struct ubi_device *ubi)

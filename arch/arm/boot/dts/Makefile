@@ -1,9 +1,15 @@
 ifeq ($(CONFIG_OF),y)
 
+ifeq ($(CONFIG_OF_OVERLAY),y)
+DTC_FLAGS += -@
+endif
+
 dtb-$(CONFIG_ARCH_ALPINE) += \
 	alpine-db.dtb
+
 dtb-$(CONFIG_MACH_ASM9260) += \
 	alphascale-asm9260-devkit.dtb
+
 # Keep at91 dtb files sorted alphabetically for each SoC
 dtb-$(CONFIG_SOC_SAM_V4_V5) += \
 	at91rm9200ek.dtb \
@@ -610,6 +616,8 @@ dtb-$(CONFIG_MACH_SUN4I) += \
 	sun4i-a10-pcduino2.dtb \
 	sun4i-a10-pov-protab2-ips9.dtb
 dtb-$(CONFIG_MACH_SUN5I) += \
+	ntc-gr8-crumb.dtb \
+	ntc-gr8-evb.dtb \
 	sun5i-a10s-auxtek-t003.dtb \
 	sun5i-a10s-auxtek-t004.dtb \
 	sun5i-a10s-mk802.dtb \

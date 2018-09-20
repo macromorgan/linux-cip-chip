@@ -35,6 +35,13 @@ config REGULATOR_FIXED_VOLTAGE
 	  useful for systems which use a combination of software
 	  managed regulators and simple non-configurable regulators.
 
+config REGULATOR_COUPLED_VOLTAGE
+	tristate "Coupled voltage regulator support"
+	help
+	  This driver provides support for regulators that are an
+	  aggregate of other regulators in the system, and need to
+	  keep them all in sync.
+
 config REGULATOR_VIRTUAL_CONSUMER
 	tristate "Virtual regulator consumer support"
 	help

@@ -142,17 +142,17 @@ int ubi_start_update(struct ubi_device *ubi, struct ubi_volume *vol,
 		return err;
 
 	/* Before updating - wipe out the volume */
-	for (i = 0; i < vol->reserved_pebs; i++) {
+	for (i = 0; i < vol->reserved_lebs; i++) {
 		err = ubi_eba_unmap_leb(ubi, vol, i);
 		if (err)
 			return err;
 	}
 
-	err = ubi_wl_flush(ubi, UBI_ALL, UBI_ALL);
-	if (err)
-		return err;
-
 	if (bytes == 0) {
+		err = ubi_work_flush(ubi);
+		if (err)
+			return err;
+
 		err = clear_update_marker(ubi, vol, 0);
 		if (err)
 			return err;
@@ -361,9 +361,10 @@ int ubi_more_update_data(struct ubi_device *ubi, struct ubi_volume *vol,
 
 	ubi_assert(vol->upd_received <= vol->upd_bytes);
 	if (vol->upd_received == vol->upd_bytes) {
-		err = ubi_wl_flush(ubi, UBI_ALL, UBI_ALL);
+		err = ubi_work_flush(ubi);
 		if (err)
 			return err;
+
 		/* The update is finished, clear the update marker */
 		err = clear_update_marker(ubi, vol, vol->upd_bytes);
 		if (err)

@@ -366,7 +366,9 @@ static ssize_t dev_attribute_show(struct device *dev,
 	if (attr == &dev_eraseblock_size)
 		ret = sprintf(buf, "%d\n", ubi->leb_size);
 	else if (attr == &dev_avail_eraseblocks)
-		ret = sprintf(buf, "%d\n", ubi->avail_pebs);
+		ret = sprintf(buf, "%d\n",
+			      ubi->avail_pebs *
+			      ubi->lebs_per_cpeb);
 	else if (attr == &dev_total_eraseblocks)
 		ret = sprintf(buf, "%d\n", ubi->good_peb_count);
 	else if (attr == &dev_volumes_count)
@@ -645,7 +647,8 @@ static int io_init(struct ubi_device *ubi, int max_beb_per1024)
 	 * physical eraseblocks maximum.
 	 */
 
-	ubi->peb_size   = ubi->mtd->erasesize;
+	ubi->peb_size = ubi->mtd->erasesize;
+	ubi->lebs_per_cpeb = mtd_pairing_groups_per_eb(ubi->mtd);
 	ubi->peb_count  = mtd_div_by_eb(ubi->mtd->size, ubi->mtd);
 	ubi->flash_size = ubi->mtd->size;
 
@@ -711,6 +714,10 @@ static int io_init(struct ubi_device *ubi, int max_beb_per1024)
 						ubi->vid_hdr_aloffset;
 	}
 
+	ubi->ec_rd_hdr_alsize = ALIGN(UBI_EC_HDR_SIZE, ubi->mtd->readsize);
+	ubi->vid_rd_hdr_alsize = ALIGN(UBI_VID_HDR_SIZE + ubi->vid_hdr_shift,
+				       ubi->mtd->readsize);
+
 	/* Similar for the data offset */
 	ubi->leb_start = ubi->vid_hdr_offset + UBI_VID_HDR_SIZE;
 	ubi->leb_start = ALIGN(ubi->leb_start, ubi->min_io_size);
@@ -756,7 +763,7 @@ static int io_init(struct ubi_device *ubi, int max_beb_per1024)
 		ubi->ro_mode = 1;
 	}
 
-	ubi->leb_size = ubi->peb_size - ubi->leb_start;
+	ubi->leb_size = (ubi->peb_size / ubi->lebs_per_cpeb) - ubi->leb_start;
 
 	if (!(ubi->mtd->flags & MTD_WRITEABLE)) {
 		ubi_msg(ubi, "MTD device %d is write-protected, attach in read-only mode",
@@ -789,7 +796,7 @@ static int autoresize(struct ubi_device *ubi, int vol_id)
 {
 	struct ubi_volume_desc desc;
 	struct ubi_volume *vol = ubi->volumes[vol_id];
-	int err, old_reserved_pebs = vol->reserved_pebs;
+	int err, old_reserved_lebs = vol->reserved_lebs;
 
 	if (ubi->ro_mode) {
 		ubi_warn(ubi, "skip auto-resize because of R/O mode");
@@ -816,9 +823,11 @@ static int autoresize(struct ubi_device *ubi, int vol_id)
 			ubi_err(ubi, "cannot clean auto-resize flag for volume %d",
 				vol_id);
 	} else {
+		int avail_lebs = ubi->avail_pebs *
+				 ubi->lebs_per_cpeb;
+
 		desc.vol = vol;
-		err = ubi_resize_volume(&desc,
-					old_reserved_pebs + ubi->avail_pebs);
+		err = ubi_resize_volume(&desc, old_reserved_lebs + avail_lebs);
 		if (err)
 			ubi_err(ubi, "cannot auto-resize volume %d",
 				vol_id);
@@ -828,7 +837,7 @@ static int autoresize(struct ubi_device *ubi, int vol_id)
 		return err;
 
 	ubi_msg(ubi, "volume %d (\"%s\") re-sized from %d to %d LEBs",
-		vol_id, vol->name, old_reserved_pebs, vol->reserved_pebs);
+		vol_id, vol->name, old_reserved_lebs, vol->reserved_lebs);
 	return 0;
 }
 
@@ -869,7 +878,7 @@ int ubi_attach_mtd_dev(struct mtd_info *mtd, int ubi_num,
 	for (i = 0; i < UBI_MAX_DEVICES; i++) {
 		ubi = ubi_devices[i];
 		if (ubi && mtd->index == ubi->mtd->index) {
-			pr_err("ubi: mtd%d is already attached to ubi%d",
+			ubi_err(ubi, "mtd%d is already attached to ubi%d",
 				mtd->index, i);
 			return -EEXIST;
 		}
@@ -884,18 +893,7 @@ int ubi_attach_mtd_dev(struct mtd_info *mtd, int ubi_num,
 	 * no sense to attach emulated MTD devices, so we prohibit this.
 	 */
 	if (mtd->type == MTD_UBIVOLUME) {
-		pr_err("ubi: refuse attaching mtd%d - it is already emulated on top of UBI",
-			mtd->index);
-		return -EINVAL;
-	}
-
-	/*
-	 * Both UBI and UBIFS have been designed for SLC NAND and NOR flashes.
-	 * MLC NAND is different and needs special care, otherwise UBI or UBIFS
-	 * will die soon and you will lose all your data.
-	 */
-	if (mtd->type == MTD_MLCNANDFLASH) {
-		pr_err("ubi: refuse attaching mtd%d - MLC NAND is not supported\n",
+		ubi_err(ubi, "refuse attaching mtd%d - it is already emulated on top of UBI",
 			mtd->index);
 		return -EINVAL;
 	}
@@ -906,7 +904,7 @@ int ubi_attach_mtd_dev(struct mtd_info *mtd, int ubi_num,
 			if (!ubi_devices[ubi_num])
 				break;
 		if (ubi_num == UBI_MAX_DEVICES) {
-			pr_err("ubi: only %d UBI devices may be created",
+			ubi_err(ubi, "only %d UBI devices may be created",
 				UBI_MAX_DEVICES);
 			return -ENFILE;
 		}
@@ -916,7 +914,7 @@ int ubi_attach_mtd_dev(struct mtd_info *mtd, int ubi_num,
 
 		/* Make sure ubi_num is not busy */
 		if (ubi_devices[ubi_num]) {
-			pr_err("ubi: ubi%i already exists", ubi_num);
+			ubi_err(ubi, "already exists");
 			return -EEXIST;
 		}
 	}
@@ -985,21 +983,15 @@ int ubi_attach_mtd_dev(struct mtd_info *mtd, int ubi_num,
 	if (!ubi->fm_buf)
 		goto out_free;
 #endif
+	ubi->thread_enabled = 1;
+	ubi->thread_suspended = 1;
+
 	err = ubi_attach(ubi, 0);
 	if (err) {
 		ubi_err(ubi, "failed to attach mtd%d, error %d",
 			mtd->index, err);
 		goto out_free;
 	}
-
-	if (ubi->autoresize_vol_id != -1) {
-		err = autoresize(ubi, ubi->autoresize_vol_id);
-		if (err)
-			goto out_detach;
-	}
-
-	/* Make device "available" before it becomes accessible via sysfs */
-	ubi_devices[ubi_num] = ubi;
 
 	err = uif_init(ubi, &ref);
 	if (err)
@@ -1035,19 +1027,29 @@ int ubi_attach_mtd_dev(struct mtd_info *mtd, int ubi_num,
 		ubi->image_seq);
 	ubi_msg(ubi, "available PEBs: %d, total reserved PEBs: %d, PEBs reserved for bad PEB handling: %d",
 		ubi->avail_pebs, ubi->rsvd_pebs, ubi->beb_rsvd_pebs);
+	ubi_msg(ubi, "LEBs per PEB: %d", ubi->lebs_per_cpeb);
 
 	/*
 	 * The below lock makes sure we do not race with 'ubi_thread()' which
 	 * checks @ubi->thread_enabled. Otherwise we may fail to wake it up.
 	 */
 	spin_lock(&ubi->wl_lock);
-	ubi->thread_enabled = 1;
+	ubi->thread_suspended = 0;
 	wake_up_process(ubi->bgt_thread);
 	spin_unlock(&ubi->wl_lock);
 
+	if (ubi->autoresize_vol_id != -1) {
+		err = autoresize(ubi, ubi->autoresize_vol_id);
+		if (err)
+			goto out_kthread;
+	}
+
+	ubi_devices[ubi_num] = ubi;
 	ubi_notify_all(ubi, UBI_VOLUME_ADDED, NULL);
 	return ubi_num;
 
+out_kthread:
+	kthread_stop(ubi->bgt_thread);
 out_debugfs:
 	ubi_debugfs_exit_dev(ubi);
 out_uif:
@@ -1055,7 +1057,6 @@ out_uif:
 	ubi_assert(ref);
 	uif_close(ubi);
 out_detach:
-	ubi_devices[ubi_num] = NULL;
 	ubi_wl_close(ubi);
 	ubi_free_internal_volumes(ubi);
 	vfree(ubi->vtbl);
@@ -1132,9 +1133,6 @@ int ubi_detach_mtd_dev(int ubi_num, int anyway)
 	 */
 	get_device(&ubi->dev);
 
-#ifdef CONFIG_MTD_UBI_FASTMAP
-	cancel_work_sync(&ubi->fm_work);
-#endif
 	ubi_debugfs_exit_dev(ubi);
 	uif_close(ubi);
 

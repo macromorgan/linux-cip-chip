@@ -12,6 +12,7 @@
 #include <linux/types.h>
 
 
+
 /*
  * Partition definition structure:
  *
@@ -42,6 +43,7 @@ struct mtd_partition {
 	uint64_t offset;		/* offset within the master MTD space */
 	uint32_t mask_flags;		/* master MTD flags to mask out for this partition */
 	struct nand_ecclayout *ecclayout;	/* out of band layout for this partition (NAND only) */
+	struct device_node *of_node;
 };
 
 #define MTDPART_OFS_RETAIN	(-3)
@@ -62,7 +64,6 @@ struct mtd_part_parser_data {
 	unsigned long origin;
 	struct device_node *of_node;
 };
-
 
 /*
  * Functions dealing with the various ways of partitioning the space

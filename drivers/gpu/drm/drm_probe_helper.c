@@ -229,6 +229,9 @@ static int drm_helper_probe_single_connector_modes_merge_bits(struct drm_connect
 		mode_flags |= DRM_MODE_FLAG_3D_MASK;
 
 	list_for_each_entry(mode, &connector->modes, head) {
+		const struct drm_encoder_helper_funcs *encoder_funcs;
+		struct drm_encoder *encoder = connector->encoder;
+
 		if (mode->status == MODE_OK)
 			mode->status = drm_mode_validate_basic(mode);
 
@@ -241,6 +244,14 @@ static int drm_helper_probe_single_connector_modes_merge_bits(struct drm_connect
 		if (mode->status == MODE_OK && connector_funcs->mode_valid)
 			mode->status = connector_funcs->mode_valid(connector,
 								   mode);
+
+		if (!encoder)
+			continue;
+
+		encoder_funcs = encoder->helper_private;
+		if (mode->status == MODE_OK && encoder_funcs->mode_valid)
+			mode->status = encoder_funcs->mode_valid(encoder,
+								 mode);
 	}
 
 prune:

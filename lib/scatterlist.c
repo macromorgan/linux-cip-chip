@@ -433,6 +433,131 @@ int sg_alloc_table_from_pages(struct sg_table *sgt,
 }
 EXPORT_SYMBOL(sg_alloc_table_from_pages);
 
+static size_t sg_buf_chunk_len(const void *buf, size_t len,
+			       size_t max_dma_len, size_t pref_align)
+{
+	size_t chunk_len = len;
+
+	if (max_dma_len)
+		chunk_len = min_t(size_t, chunk_len, max_dma_len);
+
+	if (is_vmalloc_addr(buf))
+		chunk_len = min_t(size_t, chunk_len,
+				  PAGE_SIZE - offset_in_page(buf));
+
+	if (!IS_ALIGNED((unsigned long)buf, pref_align)) {
+		const void *aligned_buf = PTR_ALIGN(buf, pref_align);
+		size_t unaligned_len = (unsigned long)(aligned_buf - buf);
+
+		min_t(size_t, chunk_len, unaligned_len);
+	} else if (chunk_len > pref_align) {
+		chunk_len &= ~(pref_align - 1);
+	}
+
+	return chunk_len;
+}
+
+#define sg_for_each_chunk_in_buf(buf, len, chunk_len,			\
+				 max_dma_len, pref_align)		\
+	for (chunk_len = sg_buf_chunk_len(buf, len,			\
+					  max_dma_len, pref_align);	\
+	     len;							\
+	     len -= chunk_len, buf += chunk_len,			\
+	     chunk_len = sg_buf_chunk_len(buf, len,			\
+					  max_dma_len, pref_align))
+
+int sg_alloc_table_from_buf(struct sg_table *sgt, const void *buf,
+			    size_t len, size_t max_dma_len,
+			    size_t required_alignment,
+			    size_t prefered_alignment,
+			    gfp_t gfp_mask)
+{
+	size_t remaining, chunk_len;
+	const void *sg_buf;
+	int i, ret;
+
+	if (!required_alignment)
+		required_alignment = 1;
+
+	if (!prefered_alignment)
+		prefered_alignment = required_alignment;
+
+	/* Test if buf and len are properly aligned. */
+	if (!IS_ALIGNED((unsigned long)buf, required_alignment) ||
+	    !IS_ALIGNED(len, required_alignment))
+		return -EINVAL;
+
+	/*
+	 * if the buffer has been vmallocated and required_alignment is
+	 * more than PAGE_SIZE we cannot guarantee it.
+	 */
+	if (is_vmalloc_addr(buf) && required_alignment > PAGE_SIZE)
+		return -EINVAL;
+
+	/*
+	 * max_dma_len has to be aligned to required_alignment to
+	 * guarantee that all buffer chunks are aligned correctly.
+	 */
+	if (!IS_ALIGNED(max_dma_len, required_alignment))
+		return -EINVAL;
+
+	/*
+	 * max_dma_len has to be aligned to required_alignment to
+	 * guarantee that all buffer chunks are aligned correctly.
+	 */
+	if (!IS_ALIGNED(max_dma_len, required_alignment))
+		return -EINVAL;
+
+	/*
+	 * prefered_alignment has to be aligned to required_alignment
+	 * to avoid misalignment of buffer chunks.
+	 */
+	if (!IS_ALIGNED(prefered_alignment, required_alignment))
+		return -EINVAL;
+
+	sg_buf = buf;
+	remaining = len;
+	i = 0;
+	sg_for_each_chunk_in_buf(sg_buf, remaining, chunk_len, max_dma_len,
+				 prefered_alignment)
+		i++;
+
+	ret = sg_alloc_table(sgt, i, GFP_KERNEL);
+	if (ret)
+		return ret;
+
+	sg_buf = buf;
+	remaining = len;
+	i = 0;
+	sg_for_each_chunk_in_buf(sg_buf, remaining, chunk_len, max_dma_len,
+				 prefered_alignment) {
+		if (is_vmalloc_addr(sg_buf)) {
+			struct page *vm_page;
+
+			vm_page = vmalloc_to_page(sg_buf);
+			if (!vm_page) {
+				ret = -ENOMEM;
+				goto err_free_table;
+			}
+
+			sg_set_page(&sgt->sgl[i], vm_page, chunk_len,
+				    offset_in_page(sg_buf));
+		} else {
+			sg_set_buf(&sgt->sgl[i], sg_buf, chunk_len);
+		}
+
+		i++;
+	}
+
+	return 0;
+
+err_free_table:
+	sg_free_table(sgt);
+
+	return ret;
+}
+EXPORT_SYMBOL(sg_alloc_table_from_buf);
+
 void __sg_page_iter_start(struct sg_page_iter *piter,
 			  struct scatterlist *sglist, unsigned int nents,
 			  unsigned long pgoffset)

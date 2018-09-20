@@ -420,7 +420,8 @@ static int scan_block_fast(struct mtd_info *mtd, struct nand_bbt_descr *bd,
 	ops.oobbuf = buf;
 	ops.ooboffs = 0;
 	ops.datbuf = NULL;
-	ops.mode = MTD_OPS_PLACE_OOB;
+	ops.mode = bd->options & NAND_BBT_SCANRAWMODE ?
+		   MTD_OPS_RAW : MTD_OPS_PLACE_OOB;
 
 	for (j = 0; j < numpages; j++) {
 		/*

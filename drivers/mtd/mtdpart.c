@@ -38,14 +38,6 @@
 static LIST_HEAD(mtd_partitions);
 static DEFINE_MUTEX(mtd_partitions_mutex);
 
-/* Our partition node structure */
-struct mtd_part {
-	struct mtd_info mtd;
-	struct mtd_info *master;
-	uint64_t offset;
-	struct list_head list;
-};
-
 /*
  * Given a pointer to the MTD object in the mtd_part structure, we can retrieve
  * the pointer to that structure with this macro.
@@ -319,6 +311,9 @@ static int part_block_markbad(struct mtd_info *mtd, loff_t ofs)
 
 static inline void free_partition(struct mtd_part *p)
 {
+	if (p->master->part_ops && p->master->part_ops->remove)
+		p->master->part_ops->remove(p);
+
 	kfree(p->mtd.name);
 	kfree(p);
 }
@@ -367,15 +362,19 @@ static struct mtd_part *allocate_partition(struct mtd_info *master,
 		return ERR_PTR(-ENOMEM);
 	}
 
+	slave->mtd.dev.of_node = part->of_node;
+
 	/* set up the MTD object for this partition */
 	slave->mtd.type = master->type;
 	slave->mtd.flags = master->flags & ~part->mask_flags;
 	slave->mtd.size = part->size;
 	slave->mtd.writesize = master->writesize;
+	slave->mtd.readsize = master->readsize;
 	slave->mtd.writebufsize = master->writebufsize;
 	slave->mtd.oobsize = master->oobsize;
 	slave->mtd.oobavail = master->oobavail;
 	slave->mtd.subpage_sft = master->subpage_sft;
+	slave->mtd.pairing = master->pairing;
 
 	slave->mtd.name = name;
 	slave->mtd.owner = master->owner;
@@ -547,6 +546,19 @@ static struct mtd_part *allocate_partition(struct mtd_info *master,
 			else if (mtd_block_isbad(master, offs + slave->offset))
 				slave->mtd.ecc_stats.badblocks++;
 			offs += slave->mtd.erasesize;
+		}
+	}
+
+	if (master->part_ops && master->part_ops->add) {
+		int ret;
+
+		ret = master->part_ops->add(slave);
+		if (ret) {
+			pr_err("error %d while creating partitions for \"%s\"\n",
+			       ret, master->name);
+			kfree(name);
+			kfree(slave);
+			return ERR_PTR(ret);
 		}
 	}
 

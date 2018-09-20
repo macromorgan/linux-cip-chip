@@ -108,7 +108,7 @@ void ubi_dump_vol_info(const struct ubi_volume *vol)
 {
 	pr_err("Volume information dump:\n");
 	pr_err("\tvol_id          %d\n", vol->vol_id);
-	pr_err("\treserved_pebs   %d\n", vol->reserved_pebs);
+	pr_err("\treserved_lebs   %d\n", vol->reserved_lebs);
 	pr_err("\talignment       %d\n", vol->alignment);
 	pr_err("\tdata_pad        %d\n", vol->data_pad);
 	pr_err("\tvol_type        %d\n", vol->vol_type);
@@ -140,7 +140,7 @@ void ubi_dump_vtbl_record(const struct ubi_vtbl_record *r, int idx)
 	int name_len = be16_to_cpu(r->name_len);
 
 	pr_err("Volume table record %d dump:\n", idx);
-	pr_err("\treserved_pebs   %d\n", be32_to_cpu(r->reserved_pebs));
+	pr_err("\treserved_pebs   %d\n", be32_to_cpu(r->reserved_lebs));
 	pr_err("\talignment       %d\n", be32_to_cpu(r->alignment));
 	pr_err("\tdata_pad        %d\n", be32_to_cpu(r->data_pad));
 	pr_err("\tvol_type        %d\n", (int)r->vol_type);
@@ -185,14 +185,14 @@ void ubi_dump_av(const struct ubi_ainf_volume *av)
  * @aeb: the object to dump
  * @type: object type: 0 - not corrupted, 1 - corrupted
  */
-void ubi_dump_aeb(const struct ubi_ainf_peb *aeb, int type)
+void ubi_dump_aeb(const struct ubi_ainf_leb *aeb, int type)
 {
 	pr_err("eraseblock attaching information dump:\n");
-	pr_err("\tec       %d\n", aeb->ec);
-	pr_err("\tpnum     %d\n", aeb->pnum);
+	pr_err("\tec       %d\n", aeb->peb->ec);
+	pr_err("\tpnum     %d\n", aeb->peb->pnum);
 	if (type == 0) {
-		pr_err("\tlnum     %d\n", aeb->lnum);
-		pr_err("\tscrub    %d\n", aeb->scrub);
+		pr_err("\tlnum     %d\n", aeb->desc.lnum);
+		pr_err("\tscrub    %d\n", aeb->peb->scrub);
 		pr_err("\tsqnum    %llu\n", aeb->sqnum);
 	}
 }
@@ -277,12 +277,12 @@ static ssize_t dfs_file_read(struct file *file, char __user *user_buf,
 		val = d->chk_io;
 	else if (dent == d->dfs_chk_fastmap)
 		val = d->chk_fastmap;
-	else if (dent == d->dfs_disable_bgt)
-		val = d->disable_bgt;
 	else if (dent == d->dfs_emulate_bitflips)
 		val = d->emulate_bitflips;
 	else if (dent == d->dfs_emulate_io_failures)
 		val = d->emulate_io_failures;
+	else if (dent == d->dfs_force_leb_consolidation)
+		val = d->force_leb_consolidation;
 	else if (dent == d->dfs_emulate_power_cut) {
 		snprintf(buf, sizeof(buf), "%u\n", d->emulate_power_cut);
 		count = simple_read_from_buffer(user_buf, count, ppos,
@@ -371,12 +371,17 @@ static ssize_t dfs_file_write(struct file *file, const char __user *user_buf,
 		d->chk_io = val;
 	else if (dent == d->dfs_chk_fastmap)
 		d->chk_fastmap = val;
-	else if (dent == d->dfs_disable_bgt)
-		d->disable_bgt = val;
 	else if (dent == d->dfs_emulate_bitflips)
 		d->emulate_bitflips = val;
 	else if (dent == d->dfs_emulate_io_failures)
 		d->emulate_io_failures = val;
+	else if (dent == d->dfs_force_leb_consolidation)
+		d->force_leb_consolidation = val;
+	else if (dent == d->dfs_trigger_leb_consolidation) {
+		val = ubi_conso_sync(ubi);
+		if (val < 0)
+			count = val;
+	}
 	else
 		count = -EINVAL;
 
@@ -448,13 +453,6 @@ int ubi_debugfs_init_dev(struct ubi_device *ubi)
 		goto out_remove;
 	d->dfs_chk_fastmap = dent;
 
-	fname = "tst_disable_bgt";
-	dent = debugfs_create_file(fname, S_IWUSR, d->dfs_dir, (void *)ubi_num,
-				   &dfs_fops);
-	if (IS_ERR_OR_NULL(dent))
-		goto out_remove;
-	d->dfs_disable_bgt = dent;
-
 	fname = "tst_emulate_bitflips";
 	dent = debugfs_create_file(fname, S_IWUSR, d->dfs_dir, (void *)ubi_num,
 				   &dfs_fops);
@@ -490,6 +488,19 @@ int ubi_debugfs_init_dev(struct ubi_device *ubi)
 		goto out_remove;
 	d->dfs_power_cut_max = dent;
 
+	fname = "force_leb_consolidation";
+	dent = debugfs_create_file(fname, S_IWUSR, d->dfs_dir, (void *)ubi_num,
+				   &dfs_fops);
+	if (IS_ERR_OR_NULL(dent))
+		goto out_remove;
+	d->dfs_force_leb_consolidation = dent;
+
+	fname = "trigger_leb_consolidation";
+	dent = debugfs_create_file(fname, S_IWUSR, d->dfs_dir, (void *)ubi_num,
+				   &dfs_fops);
+	if (IS_ERR_OR_NULL(dent))
+		goto out_remove;
+	d->dfs_trigger_leb_consolidation = dent;
 	return 0;
 
 out_remove:

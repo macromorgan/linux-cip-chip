@@ -657,6 +657,7 @@ DEFINE_WW_CLASS(crtc_ww_class);
  * @primary: Primary plane for CRTC
  * @cursor: Cursor plane for CRTC
  * @funcs: callbacks for the new CRTC
+ * @name: printf style format string for the CRTC name, or NULL for default name
  *
  * Inits a new object created as base part of a driver crtc object.
  *
@@ -666,7 +667,8 @@ DEFINE_WW_CLASS(crtc_ww_class);
 int drm_crtc_init_with_planes(struct drm_device *dev, struct drm_crtc *crtc,
 			      struct drm_plane *primary,
 			      struct drm_plane *cursor,
-			      const struct drm_crtc_funcs *funcs)
+			      const struct drm_crtc_funcs *funcs,
+			      const char *name, ...)
 {
 	struct drm_mode_config *config = &dev->mode_config;
 	int ret;
@@ -846,8 +848,9 @@ static void drm_connector_get_cmdline_mode(struct drm_connector *connector)
 		connector->force = mode->force;
 	}
 
-	DRM_DEBUG_KMS("cmdline mode for connector %s %dx%d@%dHz%s%s%s\n",
+	DRM_DEBUG_KMS("cmdline mode for connector %s %s %dx%d@%dHz%s%s%s\n",
 		      connector->name,
+		      mode->name ? mode->name : "",
 		      mode->xres, mode->yres,
 		      mode->refresh_specified ? mode->refresh : 60,
 		      mode->rb ? " reduced blanking" : "",
@@ -1049,25 +1052,65 @@ void drm_connector_unregister(struct drm_connector *connector)
 }
 EXPORT_SYMBOL(drm_connector_unregister);
 
-
 /**
- * drm_connector_unplug_all - unregister connector userspace interfaces
+ * drm_connector_register_all - register all connectors
  * @dev: drm device
  *
- * This function unregisters all connector userspace interfaces in sysfs. Should
- * be call when the device is disconnected, e.g. from an usb driver's
- * ->disconnect callback.
+ * This function registers all connectors in sysfs and other places so that
+ * userspace can start to access them. Drivers can call it after calling
+ * drm_dev_register() to complete the device registration, if they don't call
+ * drm_connector_register() on each connector individually.
+ *
+ * When a device is unplugged and should be removed from userspace access,
+ * call drm_connector_unregister_all(), which is the inverse of this
+ * function.
+ *
+ * Returns:
+ * Zero on success, error code on failure.
  */
-void drm_connector_unplug_all(struct drm_device *dev)
+int drm_connector_register_all(struct drm_device *dev)
+{
+	struct drm_connector *connector;
+	int ret;
+
+	mutex_lock(&dev->mode_config.mutex);
+
+	drm_for_each_connector(connector, dev) {
+		ret = drm_connector_register(connector);
+		if (ret)
+			goto err;
+	}
+
+	mutex_unlock(&dev->mode_config.mutex);
+
+	return 0;
+
+err:
+	mutex_unlock(&dev->mode_config.mutex);
+	drm_connector_unregister_all(dev);
+	return ret;
+}
+EXPORT_SYMBOL(drm_connector_register_all);
+
+/**
+ * drm_connector_unregister_all - unregister connector userspace interfaces
+ * @dev: drm device
+ *
+ * This functions unregisters all connectors from sysfs and other places so
+ * that userspace can no longer access them. Drivers should call this as the
+ * first step tearing down the device instace, or when the underlying
+ * physical device disappeared (e.g. USB unplug), right before calling
+ * drm_dev_unregister().
+ */
+void drm_connector_unregister_all(struct drm_device *dev)
 {
 	struct drm_connector *connector;
 
 	/* FIXME: taking the mode config mutex ends up in a clash with sysfs */
 	list_for_each_entry(connector, &dev->mode_config.connector_list, head)
 		drm_connector_unregister(connector);
-
 }
-EXPORT_SYMBOL(drm_connector_unplug_all);
+EXPORT_SYMBOL(drm_connector_unregister_all);
 
 /**
  * drm_encoder_init - Init a preallocated encoder
@@ -1075,6 +1118,7 @@ EXPORT_SYMBOL(drm_connector_unplug_all);
  * @encoder: the encoder to init
  * @funcs: callbacks for this encoder
  * @encoder_type: user visible type of the encoder
+ * @name: printf style format string for the encoder name, or NULL for default name
  *
  * Initialises a preallocated encoder. Encoder should be
  * subclassed as part of driver encoder objects.
@@ -1085,7 +1129,7 @@ EXPORT_SYMBOL(drm_connector_unplug_all);
 int drm_encoder_init(struct drm_device *dev,
 		      struct drm_encoder *encoder,
 		      const struct drm_encoder_funcs *funcs,
-		      int encoder_type)
+		      int encoder_type, const char *name, ...)
 {
 	int ret;
 
@@ -1150,6 +1194,7 @@ EXPORT_SYMBOL(drm_encoder_cleanup);
  * @formats: array of supported formats (%DRM_FORMAT_*)
  * @format_count: number of elements in @formats
  * @type: type of plane (overlay, primary, cursor)
+ * @name: printf style format string for the plane name, or NULL for default name
  *
  * Initializes a plane object of type @type.
  *
@@ -1160,7 +1205,8 @@ int drm_universal_plane_init(struct drm_device *dev, struct drm_plane *plane,
 			     unsigned long possible_crtcs,
 			     const struct drm_plane_funcs *funcs,
 			     const uint32_t *formats, unsigned int format_count,
-			     enum drm_plane_type type)
+			     enum drm_plane_type type,
+			     const char *name, ...)
 {
 	struct drm_mode_config *config = &dev->mode_config;
 	int ret;
@@ -1240,7 +1286,7 @@ int drm_plane_init(struct drm_device *dev, struct drm_plane *plane,
 
 	type = is_primary ? DRM_PLANE_TYPE_PRIMARY : DRM_PLANE_TYPE_OVERLAY;
 	return drm_universal_plane_init(dev, plane, possible_crtcs, funcs,
-					formats, format_count, type);
+					formats, format_count, type, NULL);
 }
 EXPORT_SYMBOL(drm_plane_init);
 

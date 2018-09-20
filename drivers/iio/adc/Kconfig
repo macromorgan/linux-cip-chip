@@ -314,6 +314,16 @@ config ROCKCHIP_SARADC
 	  To compile this driver as a module, choose M here: the
 	  module will be called rockchip_saradc.
 
+config SUN4I_LRADC
+	tristate "Allwinner LRADC driver"
+	depends on ARCH_SUNXI || COMPILE_TEST
+	select IIO_TRIGGER
+	help
+	  Say yes here to build support for the LRADC found on Allwinner SoCs.
+
+	  To compile this driver as a module, choose M here: the module will be
+	  called sun4i_lradc.
+
 config TI_ADC081C
 	tristate "Texas Instruments ADC081C021/027"
 	depends on I2C

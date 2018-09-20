@@ -659,6 +659,14 @@ static int w1_family_notify(unsigned long action, struct w1_slave *sl)
 				return err;
 			}
 		}
+		if (fops->callback) {
+			err = fops->callback(sl);
+			if (err) {
+				dev_err(&sl->dev,
+					"callback call failed. err=%d\n", err);
+				return err;
+			}
+		}
 
 		break;
 	case BUS_NOTIFY_DEL_DEVICE:

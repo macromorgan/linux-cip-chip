@@ -58,9 +58,14 @@
 #define SUN4I_CODEC_DAC_ACTL_DACAENR			(31)
 #define SUN4I_CODEC_DAC_ACTL_DACAENL			(30)
 #define SUN4I_CODEC_DAC_ACTL_MIXEN			(29)
+#define SUN4I_CODEC_DAC_ACTL_MICG			(20)
 #define SUN4I_CODEC_DAC_ACTL_LDACLMIXS			(15)
 #define SUN4I_CODEC_DAC_ACTL_RDACRMIXS			(14)
 #define SUN4I_CODEC_DAC_ACTL_LDACRMIXS			(13)
+#define SUN4I_CODEC_DAC_ACTL_MIC1LS			(12)
+#define SUN4I_CODEC_DAC_ACTL_MIC1RS			(11)
+#define SUN4I_CODEC_DAC_ACTL_MIC2LS			(10)
+#define SUN4I_CODEC_DAC_ACTL_MIC2RS			(9)
 #define SUN4I_CODEC_DAC_ACTL_DACPAS			(8)
 #define SUN4I_CODEC_DAC_ACTL_MIXPAS			(7)
 #define SUN4I_CODEC_DAC_ACTL_PA_MUTE			(6)
@@ -70,6 +75,7 @@
 
 /* Codec ADC register offsets and bit fields */
 #define SUN4I_CODEC_ADC_FIFOC			(0x1c)
+#define SUN4I_CODEC_ADC_FIFOC_ADC_FS			(29)
 #define SUN4I_CODEC_ADC_FIFOC_EN_AD			(28)
 #define SUN4I_CODEC_ADC_FIFOC_RX_FIFO_MODE		(24)
 #define SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL		(8)
@@ -85,7 +91,9 @@
 #define SUN4I_CODEC_ADC_ACTL_PREG1EN			(29)
 #define SUN4I_CODEC_ADC_ACTL_PREG2EN			(28)
 #define SUN4I_CODEC_ADC_ACTL_VMICEN			(27)
-#define SUN4I_CODEC_ADC_ACTL_VADCG			(20)
+#define SUN4I_CODEC_ADC_ACTL_PREG1			(25)
+#define SUN4I_CODEC_ADC_ACTL_PREG2			(23)
+#define SUN4I_CODEC_ADC_ACTL_ADCG			(20)
 #define SUN4I_CODEC_ADC_ACTL_ADCIS			(17)
 #define SUN4I_CODEC_ADC_ACTL_PA_EN			(4)
 #define SUN4I_CODEC_ADC_ACTL_DDE			(3)
@@ -94,6 +102,7 @@
 /* Other various ADC registers */
 #define SUN4I_CODEC_DAC_TXCNT			(0x30)
 #define SUN4I_CODEC_ADC_RXCNT			(0x34)
+
 #define SUN4I_CODEC_AC_SYS_VERI			(0x38)
 #define SUN4I_CODEC_AC_MIC_PHONE_CAL		(0x3c)
 
@@ -103,6 +112,7 @@ struct sun4i_codec {
 	struct clk	*clk_apb;
 	struct clk	*clk_module;
 
+	struct snd_dmaengine_dai_dma_data	capture_dma_data;
 	struct snd_dmaengine_dai_dma_data	playback_dma_data;
 };
 
@@ -137,26 +147,54 @@ static void sun4i_codec_stop_playback(struct sun4i_codec *scodec)
 			   0);
 }
 
+static void sun4i_codec_start_capture(struct sun4i_codec *scodec)
+{
+	/*
+	 * FIXME: according to the BSP, we might need to drive a PA
+	 *        GPIO high here on some boards
+	 */
+
+	/* Enable ADC DRQ */
+	regmap_update_bits(scodec->regmap, SUN4I_CODEC_ADC_FIFOC,
+			   BIT(SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN),
+			   BIT(SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN));
+}
+
+static void sun4i_codec_stop_capture(struct sun4i_codec *scodec)
+{
+	/*
+	 * FIXME: according to the BSP, we might need to drive a PA
+	 *        GPIO low here on some boards
+	 */
+
+	/* Disable ADC DRQ */
+	regmap_update_bits(scodec->regmap, SUN4I_CODEC_ADC_FIFOC,
+			   BIT(SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN), 0);
+}
+
 static int sun4i_codec_trigger(struct snd_pcm_substream *substream, int cmd,
 			       struct snd_soc_dai *dai)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct sun4i_codec *scodec = snd_soc_card_get_drvdata(rtd->card);
 
-	if (substream->stream != SNDRV_PCM_STREAM_PLAYBACK)
-		return -ENOTSUPP;
-
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
 	case SNDRV_PCM_TRIGGER_RESUME:
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
-		sun4i_codec_start_playback(scodec);
+		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+			sun4i_codec_start_playback(scodec);
+		else
+			sun4i_codec_start_capture(scodec);
 		break;
 
 	case SNDRV_PCM_TRIGGER_STOP:
 	case SNDRV_PCM_TRIGGER_SUSPEND:
 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
-		sun4i_codec_stop_playback(scodec);
+		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+			sun4i_codec_stop_playback(scodec);
+		else
+			sun4i_codec_stop_capture(scodec);
 		break;
 
 	default:
@@ -166,15 +204,54 @@ static int sun4i_codec_trigger(struct snd_pcm_substream *substream, int cmd,
 	return 0;
 }
 
-static int sun4i_codec_prepare(struct snd_pcm_substream *substream,
-			       struct snd_soc_dai *dai)
+static int sun4i_codec_prepare_capture(struct snd_pcm_substream *substream,
+				       struct snd_soc_dai *dai)
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct sun4i_codec *scodec = snd_soc_card_get_drvdata(rtd->card);
+
+
+	/* Flush RX FIFO */
+	regmap_update_bits(scodec->regmap, SUN4I_CODEC_ADC_FIFOC,
+			   BIT(SUN4I_CODEC_ADC_FIFOC_FIFO_FLUSH),
+			   BIT(SUN4I_CODEC_ADC_FIFOC_FIFO_FLUSH));
+
+
+	/* Set RX FIFO trigger level */
+	regmap_update_bits(scodec->regmap, SUN4I_CODEC_ADC_FIFOC,
+			   0xf << SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL,
+			   0x7 << SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL);
+
+	/*
+	 * FIXME: Undocumented in the datasheet, but
+	 *        Allwinner's code mentions that it is related
+	 *        related to microphone gain
+	 */
+	regmap_update_bits(scodec->regmap, SUN4I_CODEC_ADC_ACTL,
+			   0x3 << 25,
+			   0x1 << 25);
+
+	if (of_device_is_compatible(scodec->dev->of_node,
+				    "allwinner,sun7i-a20-codec"))
+		/* FIXME: Undocumented bits */
+		regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_TUNE,
+				   0x3 << 8,
+				   0x1 << 8);
+
+	/* Fill most significant bits with valid data MSB */
+	regmap_update_bits(scodec->regmap, SUN4I_CODEC_ADC_FIFOC,
+			   BIT(SUN4I_CODEC_ADC_FIFOC_RX_FIFO_MODE),
+			   BIT(SUN4I_CODEC_ADC_FIFOC_RX_FIFO_MODE));
+
+	return 0;
+}
+
+static int sun4i_codec_prepare_playback(struct snd_pcm_substream *substream,
+					struct snd_soc_dai *dai)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct sun4i_codec *scodec = snd_soc_card_get_drvdata(rtd->card);
 	u32 val;
-
-	if (substream->stream != SNDRV_PCM_STREAM_PLAYBACK)
-		return -ENOTSUPP;
 
 	/* Flush the TX FIFO */
 	regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
@@ -203,6 +280,15 @@ static int sun4i_codec_prepare(struct snd_pcm_substream *substream,
 			   0);
 
 	return 0;
+};
+
+static int sun4i_codec_prepare(struct snd_pcm_substream *substream,
+			       struct snd_soc_dai *dai)
+{
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		return sun4i_codec_prepare_playback(substream, dai);
+
+	return sun4i_codec_prepare_capture(substream, dai);
 }
 
 static unsigned long sun4i_codec_get_mod_freq(struct snd_pcm_hw_params *params)
@@ -277,30 +363,34 @@ static int sun4i_codec_get_hw_rate(struct snd_pcm_hw_params *params)
 	}
 }
 
-static int sun4i_codec_hw_params(struct snd_pcm_substream *substream,
-				 struct snd_pcm_hw_params *params,
-				 struct snd_soc_dai *dai)
+static int sun4i_codec_hw_params_capture(struct sun4i_codec *scodec,
+					 struct snd_pcm_hw_params *params,
+					 unsigned int hwrate)
 {
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct sun4i_codec *scodec = snd_soc_card_get_drvdata(rtd->card);
-	unsigned long clk_freq;
-	int ret, hwrate;
 	u32 val;
 
-	if (substream->stream != SNDRV_PCM_STREAM_PLAYBACK)
-		return -ENOTSUPP;
+	/* Set ADC sample rate */
+	regmap_update_bits(scodec->regmap, SUN4I_CODEC_ADC_FIFOC,
+			   7 << SUN4I_CODEC_ADC_FIFOC_ADC_FS,
+			   hwrate << SUN4I_CODEC_ADC_FIFOC_ADC_FS);
 
-	clk_freq = sun4i_codec_get_mod_freq(params);
-	if (!clk_freq)
-		return -EINVAL;
+	/* Set the number of channels we want to use */
+	if (params_channels(params) == 1)
+		regmap_update_bits(scodec->regmap, SUN4I_CODEC_ADC_FIFOC,
+				   BIT(SUN4I_CODEC_ADC_FIFOC_MONO_EN),
+				   BIT(SUN4I_CODEC_ADC_FIFOC_MONO_EN));
+	else
+		regmap_update_bits(scodec->regmap, SUN4I_CODEC_ADC_FIFOC,
+				   BIT(SUN4I_CODEC_ADC_FIFOC_MONO_EN), 0);
 
-	ret = clk_set_rate(scodec->clk_module, clk_freq);
-	if (ret)
-		return ret;
+	return 0;
+}
 
-	hwrate = sun4i_codec_get_hw_rate(params);
-	if (hwrate < 0)
-		return hwrate;
+static int sun4i_codec_hw_params_playback(struct sun4i_codec *scodec,
+					  struct snd_pcm_hw_params *params,
+					  unsigned int hwrate)
+{
+	u32 val;
 
 	/* Set DAC sample rate */
 	regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
@@ -343,6 +433,34 @@ static int sun4i_codec_hw_params(struct snd_pcm_substream *substream,
 	}
 
 	return 0;
+}
+
+static int sun4i_codec_hw_params(struct snd_pcm_substream *substream,
+				 struct snd_pcm_hw_params *params,
+				 struct snd_soc_dai *dai)
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct sun4i_codec *scodec = snd_soc_card_get_drvdata(rtd->card);
+	unsigned long clk_freq;
+	int hwrate;
+
+	clk_freq = sun4i_codec_get_mod_freq(params);
+	if (!clk_freq)
+		return -EINVAL;
+
+	if (clk_set_rate(scodec->clk_module, clk_freq))
+		return -EINVAL;
+
+	hwrate = sun4i_codec_get_hw_rate(params);
+	if (hwrate < 0)
+		return hwrate;
+
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		return sun4i_codec_hw_params_playback(scodec, params,
+						      hwrate);
+
+	return sun4i_codec_hw_params_capture(scodec, params,
+					     hwrate);
 }
 
 static int sun4i_codec_startup(struct snd_pcm_substream *substream,
@@ -395,6 +513,20 @@ static struct snd_soc_dai_driver sun4i_codec_dai = {
 				  SNDRV_PCM_FMTBIT_S32_LE,
 		.sig_bits	= 24,
 	},
+	.capture = {
+		.stream_name	= "Codec Capture",
+		.channels_min	= 1,
+		.channels_max	= 2,
+		.rate_min	= 8000,
+		.rate_max	= 192000,
+		.rates		= SNDRV_PCM_RATE_8000_48000 |
+				  SNDRV_PCM_RATE_96000 |
+				  SNDRV_PCM_RATE_192000 |
+				  SNDRV_PCM_RATE_KNOT,
+		.formats	= SNDRV_PCM_FMTBIT_S16_LE |
+				  SNDRV_PCM_FMTBIT_S32_LE,
+		.sig_bits	= 24,
+	},
 };
 
 /*** Codec ***/
@@ -403,16 +535,66 @@ static const struct snd_kcontrol_new sun4i_codec_pa_mute =
 			SUN4I_CODEC_DAC_ACTL_PA_MUTE, 1, 0);
 
 static DECLARE_TLV_DB_SCALE(sun4i_codec_pa_volume_scale, -6300, 100, 1);
+static DECLARE_TLV_DB_SCALE(sun4i_codec_micin_loopback_gain_scale,
+			    -450,
+			    150,
+			    0);
+static DECLARE_TLV_DB_RANGE(sun4i_codec_micin_preamp_gain_scale,
+			    0, 0, TLV_DB_SCALE_ITEM(0, 0, 0),
+			    1, 7, TLV_DB_SCALE_ITEM(3500, 300, 0));
+static DECLARE_TLV_DB_SCALE(sun4i_codec_adc_gain_scale, -450, 150, 0);
 
-static const struct snd_kcontrol_new sun4i_codec_widgets[] = {
+static const char * const sun4i_codec_capture_source[] = {
+	"Line",
+	"FM",
+	"Mic1",
+	"Mic2",
+	"Mic1,Mic2",
+	"Mic1+Mic2",
+	"Output Mixer",
+	"Line,Mic1",
+};
+static SOC_ENUM_SINGLE_DECL(sun4i_codec_enum_capture_source,
+			    SUN4I_CODEC_ADC_ACTL,
+			    SUN4I_CODEC_ADC_ACTL_ADCIS,
+			    sun4i_codec_capture_source);
+
+static const struct snd_kcontrol_new sun4i_codec_capture_source_controls =
+	SOC_DAPM_ENUM("Capture Source", sun4i_codec_enum_capture_source);
+
+static const struct snd_kcontrol_new sun4i_codec_controls[] = {
 	SOC_SINGLE_TLV("Power Amplifier Volume", SUN4I_CODEC_DAC_ACTL,
 		       SUN4I_CODEC_DAC_ACTL_PA_VOL, 0x3F, 0,
 		       sun4i_codec_pa_volume_scale),
+	SOC_SINGLE_TLV("Mic Playback Volume",
+		       SUN4I_CODEC_DAC_ACTL,
+		       SUN4I_CODEC_DAC_ACTL_MICG,
+		       7, 0,
+		       sun4i_codec_micin_loopback_gain_scale),
+	SOC_SINGLE_TLV("Capture Volume",
+		       SUN4I_CODEC_ADC_ACTL,
+		       SUN4I_CODEC_ADC_ACTL_ADCG,
+		       4, 0,
+		       sun4i_codec_adc_gain_scale),
+	SOC_SINGLE_TLV("Mic1 Capture Volume",
+		       SUN4I_CODEC_ADC_ACTL,
+		       SUN4I_CODEC_ADC_ACTL_PREG1,
+		       3, 0,
+		       sun4i_codec_micin_preamp_gain_scale),
+	SOC_SINGLE_TLV("Mic2 Capture Volume",
+		       SUN4I_CODEC_ADC_ACTL,
+		       SUN4I_CODEC_ADC_ACTL_PREG2,
+		       3, 0,
+		       sun4i_codec_micin_preamp_gain_scale),
 };
 
 static const struct snd_kcontrol_new sun4i_codec_left_mixer_controls[] = {
 	SOC_DAPM_SINGLE("Left DAC Playback Switch", SUN4I_CODEC_DAC_ACTL,
 			SUN4I_CODEC_DAC_ACTL_LDACLMIXS, 1, 0),
+	SOC_DAPM_SINGLE("Mic1 Playback Switch", SUN4I_CODEC_DAC_ACTL,
+			SUN4I_CODEC_DAC_ACTL_MIC1LS, 1, 0),
+	SOC_DAPM_SINGLE("Mic2 Playback Switch", SUN4I_CODEC_DAC_ACTL,
+			SUN4I_CODEC_DAC_ACTL_MIC2LS, 1, 0),
 };
 
 static const struct snd_kcontrol_new sun4i_codec_right_mixer_controls[] = {
@@ -420,6 +602,10 @@ static const struct snd_kcontrol_new sun4i_codec_right_mixer_controls[] = {
 			SUN4I_CODEC_DAC_ACTL_RDACRMIXS, 1, 0),
 	SOC_DAPM_SINGLE("Left DAC Playback Switch", SUN4I_CODEC_DAC_ACTL,
 			SUN4I_CODEC_DAC_ACTL_LDACRMIXS, 1, 0),
+	SOC_DAPM_SINGLE("Mic1 Playback Switch", SUN4I_CODEC_DAC_ACTL,
+			SUN4I_CODEC_DAC_ACTL_MIC1RS, 1, 0),
+	SOC_DAPM_SINGLE("Mic2 Playback Switch", SUN4I_CODEC_DAC_ACTL,
+			SUN4I_CODEC_DAC_ACTL_MIC2RS, 1, 0),
 };
 
 static const struct snd_kcontrol_new sun4i_codec_pa_mixer_controls[] = {
@@ -430,16 +616,33 @@ static const struct snd_kcontrol_new sun4i_codec_pa_mixer_controls[] = {
 };
 
 static const struct snd_soc_dapm_widget sun4i_codec_dapm_widgets[] = {
+	/* Digital parts of the ADCs */
+	SND_SOC_DAPM_SUPPLY("ADC", SUN4I_CODEC_ADC_FIFOC,
+			    SUN4I_CODEC_ADC_FIFOC_EN_AD, 0,
+			    NULL, 0),
+
 	/* Digital parts of the DACs */
 	SND_SOC_DAPM_SUPPLY("DAC", SUN4I_CODEC_DAC_DPC,
 			    SUN4I_CODEC_DAC_DPC_EN_DA, 0,
 			    NULL, 0),
+
+	/* Analog parts of the ADCs */
+	SND_SOC_DAPM_ADC("Left ADC", "Codec Capture", SUN4I_CODEC_ADC_ACTL,
+			 SUN4I_CODEC_ADC_ACTL_ADC_L_EN, 0),
+	SND_SOC_DAPM_ADC("Right ADC", "Codec Capture", SUN4I_CODEC_ADC_ACTL,
+			 SUN4I_CODEC_ADC_ACTL_ADC_R_EN, 0),
 
 	/* Analog parts of the DACs */
 	SND_SOC_DAPM_DAC("Left DAC", "Codec Playback", SUN4I_CODEC_DAC_ACTL,
 			 SUN4I_CODEC_DAC_ACTL_DACAENL, 0),
 	SND_SOC_DAPM_DAC("Right DAC", "Codec Playback", SUN4I_CODEC_DAC_ACTL,
 			 SUN4I_CODEC_DAC_ACTL_DACAENR, 0),
+
+	/* MUX */
+	SND_SOC_DAPM_MUX("Left Capture Mux", SND_SOC_NOPM, 0, 0,
+			 &sun4i_codec_capture_source_controls),
+	SND_SOC_DAPM_MUX("Right Capture Mux", SND_SOC_NOPM, 0, 0,
+			 &sun4i_codec_capture_source_controls),
 
 	/* Mixers */
 	SND_SOC_DAPM_MIXER("Left Mixer", SND_SOC_NOPM, 0, 0,
@@ -453,6 +656,16 @@ static const struct snd_soc_dapm_widget sun4i_codec_dapm_widgets[] = {
 	SND_SOC_DAPM_SUPPLY("Mixer Enable", SUN4I_CODEC_DAC_ACTL,
 			    SUN4I_CODEC_DAC_ACTL_MIXEN, 0, NULL, 0),
 
+	/* VMIC */
+	SND_SOC_DAPM_SUPPLY("VMIC", SUN4I_CODEC_ADC_ACTL,
+			    SUN4I_CODEC_ADC_ACTL_VMICEN, 0, NULL, 0),
+
+	/* Mic Pre-Amplifiers */
+	SND_SOC_DAPM_PGA("MIC1 Pre-Amplifier", SUN4I_CODEC_ADC_ACTL,
+			 SUN4I_CODEC_ADC_ACTL_PREG1EN, 0, NULL, 0),
+	SND_SOC_DAPM_PGA("MIC2 Pre-Amplifier", SUN4I_CODEC_ADC_ACTL,
+			 SUN4I_CODEC_ADC_ACTL_PREG2EN, 0, NULL, 0),
+
 	/* Power Amplifier */
 	SND_SOC_DAPM_MIXER("Power Amplifier", SUN4I_CODEC_ADC_ACTL,
 			   SUN4I_CODEC_ADC_ACTL_PA_EN, 0,
@@ -461,25 +674,46 @@ static const struct snd_soc_dapm_widget sun4i_codec_dapm_widgets[] = {
 	SND_SOC_DAPM_SWITCH("Power Amplifier Mute", SND_SOC_NOPM, 0, 0,
 			    &sun4i_codec_pa_mute),
 
+	/* Inputs */
+	SND_SOC_DAPM_INPUT("Mic1"),
+	SND_SOC_DAPM_INPUT("Mic2"),
+
+	/* Outputs */
 	SND_SOC_DAPM_OUTPUT("HP Right"),
 	SND_SOC_DAPM_OUTPUT("HP Left"),
 };
 
 static const struct snd_soc_dapm_route sun4i_codec_dapm_routes[] = {
+	/* Left ADC Routes */
+	{ "Left ADC", NULL, "ADC" },
+	{ "Left ADC", NULL, "MIC1 Pre-Amplifier" },
+	{ "Left ADC", NULL, "MIC2 Pre-Amplifier" },
+	{ "Left ADC", NULL, "Left Capture Mux" },
+
 	/* Left DAC Routes */
 	{ "Left DAC", NULL, "DAC" },
 
+	/* Right ADC Routes */
+	{ "Right ADC", NULL, "ADC" },
+	{ "Right ADC", NULL, "MIC1 Pre-Amplifier" },
+	{ "Right ADC", NULL, "MIC2 Pre-Amplifier" },
+	{ "Right ADC", NULL, "Right Capture Mux" },
+
 	/* Right DAC Routes */
 	{ "Right DAC", NULL, "DAC" },
+
+	/* Left Mixer Routes */
+	{ "Left Mixer", NULL, "Mixer Enable" },
+	{ "Left Mixer", "Left DAC Playback Switch", "Left DAC" },
+	{ "Left Mixer", "Mic1 Playback Switch", "MIC1 Pre-Amplifier" },
+	{ "Left Mixer", "Mic2 Playback Switch", "MIC2 Pre-Amplifier" },
 
 	/* Right Mixer Routes */
 	{ "Right Mixer", NULL, "Mixer Enable" },
 	{ "Right Mixer", "Left DAC Playback Switch", "Left DAC" },
 	{ "Right Mixer", "Right DAC Playback Switch", "Right DAC" },
-
-	/* Left Mixer Routes */
-	{ "Left Mixer", NULL, "Mixer Enable" },
-	{ "Left Mixer", "Left DAC Playback Switch", "Left DAC" },
+	{ "Right Mixer", "Mic1 Playback Switch", "MIC1 Pre-Amplifier" },
+	{ "Right Mixer", "Mic2 Playback Switch", "MIC2 Pre-Amplifier" },
 
 	/* Power Amplifier Routes */
 	{ "Power Amplifier", "Mixer Playback Switch", "Left Mixer" },
@@ -491,11 +725,35 @@ static const struct snd_soc_dapm_route sun4i_codec_dapm_routes[] = {
 	{ "Power Amplifier Mute", "Switch", "Power Amplifier" },
 	{ "HP Right", NULL, "Power Amplifier Mute" },
 	{ "HP Left", NULL, "Power Amplifier Mute" },
+
+	/* Mic1 Routes */
+	{ "MIC1 Pre-Amplifier", NULL, "Mic1"},
+	{ "Mic1", NULL, "VMIC" },
+
+	/* Mic2 Routes */
+	{ "MIC2 Pre-Amplifier", NULL, "Mic2"},
+	{ "Mic2", NULL, "VMIC" },
+
+	/* Left ADC Muxer Routes */
+	{ "Left Capture Mux", "Mic1", "MIC1 Pre-Amplifier" },
+	{ "Left Capture Mux", "Mic2", "MIC2 Pre-Amplifier" },
+	{ "Left Capture Mux", "Mic1,Mic2", "MIC1 Pre-Amplifier" },
+	{ "Left Capture Mux", "Mic1+Mic2", "MIC1 Pre-Amplifier" },
+	{ "Left Capture Mux", "Mic1+Mic2", "MIC2 Pre-Amplifier" },
+	{ "Left Capture Mux", "Output Mixer", "Left Mixer" },
+
+	/* Right ADC Muxer Routes */
+	{ "Right Capture Mux", "Mic1", "MIC1 Pre-Amplifier" },
+	{ "Right Capture Mux", "Mic2", "MIC2 Pre-Amplifier" },
+	{ "Right Capture Mux", "Mic1,Mic2", "MIC2 Pre-Amplifier" },
+	{ "Right Capture Mux", "Mic1+Mic2", "MIC2 Pre-Amplifier" },
+	{ "Right Capture Mux", "Mic1+Mic2", "MIC1 Pre-Amplifier" },
+	{ "Right Capture Mux", "Output Mixer", "Right Mixer" },
 };
 
 static struct snd_soc_codec_driver sun4i_codec_codec = {
-	.controls		= sun4i_codec_widgets,
-	.num_controls		= ARRAY_SIZE(sun4i_codec_widgets),
+	.controls		= sun4i_codec_controls,
+	.num_controls		= ARRAY_SIZE(sun4i_codec_controls),
 	.dapm_widgets		= sun4i_codec_dapm_widgets,
 	.num_dapm_widgets	= ARRAY_SIZE(sun4i_codec_dapm_widgets),
 	.dapm_routes		= sun4i_codec_dapm_routes,
@@ -516,7 +774,7 @@ static int sun4i_codec_dai_probe(struct snd_soc_dai *dai)
 	struct sun4i_codec *scodec = snd_soc_card_get_drvdata(card);
 
 	snd_soc_dai_init_dma_data(dai, &scodec->playback_dma_data,
-				  NULL);
+				  &scodec->capture_dma_data);
 
 	return 0;
 }
@@ -532,6 +790,14 @@ static struct snd_soc_dai_driver dummy_cpu_dai = {
 		.formats	= SUN4I_CODEC_FORMATS,
 		.sig_bits	= 24,
 	},
+	.capture = {
+		.stream_name	= "Capture",
+		.channels_min	= 1,
+		.channels_max	= 2,
+		.rates 		= SUN4I_CODEC_RATES,
+		.formats 	= SUN4I_CODEC_FORMATS,
+		.sig_bits	= 24,
+	 },
 };
 
 static const struct regmap_config sun4i_codec_regmap_config = {
@@ -638,6 +904,11 @@ static int sun4i_codec_probe(struct platform_device *pdev)
 	scodec->playback_dma_data.addr = res->start + SUN4I_CODEC_DAC_TXDATA;
 	scodec->playback_dma_data.maxburst = 4;
 	scodec->playback_dma_data.addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
+
+	/* DMA configuration for RX FIFO */
+	scodec->capture_dma_data.addr = res->start + SUN4I_CODEC_ADC_RXDATA;
+	scodec->capture_dma_data.maxburst = 4;
+	scodec->capture_dma_data.addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
 
 	ret = snd_soc_register_codec(&pdev->dev, &sun4i_codec_codec,
 				     &sun4i_codec_dai, 1);

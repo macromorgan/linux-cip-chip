@@ -144,7 +144,12 @@ static void h5_timed_event(unsigned long arg)
 	}
 
 	if (h5->state != H5_ACTIVE) {
-		mod_timer(&h5->timer, jiffies + H5_SYNC_TIMEOUT);
+		/*
+		 * Do not re-schedule the timer if the device is being closed.
+		 */
+		if (!test_bit(HCI_UART_CLOSING, &hu->flags))
+			mod_timer(&h5->timer, jiffies + H5_SYNC_TIMEOUT);
+
 		goto wakeup;
 	}
 
