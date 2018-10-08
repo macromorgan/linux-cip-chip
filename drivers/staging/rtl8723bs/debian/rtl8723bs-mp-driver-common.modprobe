@@ -1,0 +1,3 @@
+# 8723bs module conflicts with r8723bs
+# We must blacklist the following modules:
+blacklist r8723bs

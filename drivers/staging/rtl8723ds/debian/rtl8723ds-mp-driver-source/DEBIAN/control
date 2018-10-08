@@ -1,0 +1,17 @@
+Package: rtl8723ds-mp-driver-source
+Source: rtl8723ds-mp-driver
+Version: 5.1.1.2-18132.20160706-BTCOEX20160510-0909-ntc-1
+Architecture: all
+Maintainer: Jason Abele <jason@nextthing.co>
+Installed-Size: 12878
+Depends: debhelper (>= 8), make, xz-utils
+Recommends: module-assistant
+Section: main/kernel
+Priority: optional
+Homepage: https://github.com/NextThingCo/RTL8723BS
+Description: Source for the Realtek rtl8723ds Wireless driver
+ RTL8723BS MP Driver is a device driver for the Realtek IEEE 802.11b/g/n
+ rtl8723ds SDIO wireless network card.
+ .
+ This package provides the source code for the 8723ds kernel module.
+ Kernel source or headers are required to compile these modules.

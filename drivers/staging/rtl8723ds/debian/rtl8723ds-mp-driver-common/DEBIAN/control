@@ -1,0 +1,15 @@
+Package: rtl8723ds-mp-driver-common
+Source: rtl8723ds-mp-driver
+Version: 5.1.1.2-18132.20160706-BTCOEX20160510-0909-ntc-1
+Architecture: all
+Maintainer: Jason Abele <jason@nextthing.co>
+Installed-Size: 14
+Recommends: rtl8723ds-mp-driver-source, module-assistant
+Section: main/kernel
+Priority: optional
+Homepage: https://github.com/NextThingCo/RTL8723BS
+Description: Common files for the Realtek rtl8723ds Wireless driver
+ RTL8723BS MP Driver is a device driver for the Realtek IEEE 802.11b/g/n
+ rtl8723ds SDIO wireless network card.
+ .
+ This package contains the common files.

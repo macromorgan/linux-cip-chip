@@ -1,0 +1,13 @@
+Important note
+==============
+
+This driver from conflicts with r8723ds module, so we have to blacklist
+the following modules:
+ * r8723ds, rtl8723ds driver being cleaned for upstreaming
+
+This is done in /etc/modprobe.d/rtl8723ds-mp-driver-common.conf file, you also
+should rebuild initrd file with the following command:
+
+        # update-initramfs -u -k `uname -r`
+
+ -- Jason Abele <jason@nextthing.co>  Wed, 14 Dec 2016 16:47:15 -0800

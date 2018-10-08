@@ -1,0 +1,49 @@
+#!/usr/bin/make -f
+
+#export DH_VERBOSE=1
+
+version         := $(shell dpkg-parsechangelog | sed -nr '/^Version:/s/Version: (.*:)?(.*)-(.*)/\2/p')
+
+source_name     := rtl8723bs-mp-driver
+source_package  := $(source_name)-source
+source_target   := usr/src/modules/$(source_name)
+source_debdir   := debian/$(source_package)/$(source_target)/debian
+
+dkms_package    := $(source_name)-dkms
+dkms_target     := usr/src/$(source_name)-$(version)
+
+%:
+	dh $@ --with dkms
+
+install-dkms:
+	dh_installdirs -p $(dkms_package) $(dkms_target)
+
+install-source:
+	dh_installdirs -p $(source_package) $(source_target)
+	# Copy only the driver source to the proper location
+	dh_install -p $(source_package) clean $(source_target)
+	dh_install -p $(source_package) Kconfig $(source_target)
+	dh_install -p $(source_package) os_dep $(source_target)
+	dh_install -p $(source_package) core $(source_target)
+	dh_install -p $(source_package) hal $(source_target)
+	dh_install -p $(source_package) include $(source_target)
+	dh_install -p $(source_package) Makefile $(source_target)
+	dh_install -p $(source_package) platform $(source_target)
+	#dh_install -p $(source_package) debian/patches $(source_target)/debian
+	
+	# Copy Debian files
+	install -D -m 0755 debian/rules.modules $(source_debdir)/rules
+	for file in changelog compat control control.modules.in; do \
+		install -m 644 debian/$$file $(source_debdir); \
+	done
+	
+	# Make suitable tarball for module-assisant and kernel-package
+	#cd debian/$(source_package)/usr/src && tar cfJ $(source_name).tar.xz modules && rm -rf modules
+
+override_dh_install: install-dkms install-source
+
+override_dh_dkms:
+	dh_dkms -V $(version)
+
+# do nothing
+override_dh_auto_configure override_dh_auto_build override_dh_auto_test override_dh_auto_install override_dh_auto_clean:

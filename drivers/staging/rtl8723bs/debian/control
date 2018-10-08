@@ -1,0 +1,42 @@
+Source: rtl8723bs-mp-driver
+Section: main/kernel
+Priority: optional
+Maintainer: Jason Abele <jason@nextthing.co>
+Build-Depends: debhelper (>= 8), dkms
+Standards-Version: 3.9.6
+Homepage: https://github.com/NextThingCo/RTL8723BS
+
+Package: rtl8723bs-mp-driver-common
+Architecture: all
+Depends: ${misc:Depends}
+Recommends: rtl8723bs-mp-driver-source, module-assistant
+Description: Common files for the Realtek rtl8723bs Wireless driver
+ RTL8723BS MP Driver is a device driver for the Realtek IEEE 802.11b/g/n
+ rtl8723bs SDIO wireless network card.
+ .
+ This package contains the common files.
+
+Package: rtl8723bs-mp-driver-dkms
+Architecture: all
+Depends: ${misc:Depends}
+Breaks: rtl8723bs-mp-driver-common, rtl8723bs-mp-driver-modules (<< 4.3.16-13854.20150410-BTCOEX20150119-5844-ntc), rtl8723bs-mp-driver-source
+Replaces: rtl8723bs-mp-driver-common, rtl8723bs-mp-driver-modules (<< 4.3.16-13854.20150410-BTCOEX20150119-5844-ntc), rtl8723bs-mp-driver-source
+Provides: rtl8723bs-mp-driver-modules
+Description: dkms source for the Realtek rtl8723bs Wireless driver
+ RTL8723BS MP Driver is a device driver for the Realtek IEEE 802.11b/g/n
+ rtl8723bs SDIO wireless network card.
+ .
+ This package provides the source code for the 8723bs kernel module.
+ Kernel source or headers are required to compile these modules.
+
+Package: rtl8723bs-mp-driver-source
+Architecture: all
+Depends: ${misc:Depends}, debhelper (>= 8), make, xz-utils
+Recommends: module-assistant
+Description: Source for the Realtek rtl8723bs Wireless driver
+ RTL8723BS MP Driver is a device driver for the Realtek IEEE 802.11b/g/n
+ rtl8723bs SDIO wireless network card.
+ .
+ This package provides the source code for the 8723bs kernel module.
+ Kernel source or headers are required to compile these modules.
+

@@ -1,0 +1,19 @@
+Package: rtl8723ds-mp-driver-dkms
+Source: rtl8723ds-mp-driver
+Version: 5.1.1.2-18132.20160706-BTCOEX20160510-0909-ntc-1
+Architecture: all
+Maintainer: Jason Abele <jason@nextthing.co>
+Installed-Size: 17
+Depends: dkms (>= 2.1.0.0)
+Breaks: rtl8723ds-mp-driver-common, rtl8723ds-mp-driver-modules (<< 5.1.1.2-18132.20160706-BTCOEX20160510-0909-ntc-1), rtl8723ds-mp-driver-source
+Replaces: rtl8723ds-mp-driver-common, rtl8723ds-mp-driver-modules (<< 5.1.1.2-18132.20160706-BTCOEX20160510-0909-ntc-1), rtl8723ds-mp-driver-source
+Provides: rtl8723ds-mp-driver-modules
+Section: main/kernel
+Priority: optional
+Homepage: https://github.com/NextThingCo/RTL8723BS
+Description: dkms source for the Realtek rtl8723ds Wireless driver
+ RTL8723BS MP Driver is a device driver for the Realtek IEEE 802.11b/g/n
+ rtl8723ds SDIO wireless network card.
+ .
+ This package provides the source code for the 8723ds kernel module.
+ Kernel source or headers are required to compile these modules.

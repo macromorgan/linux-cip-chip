@@ -1,0 +1,8 @@
+config RTL8723DS
+	tristate "Realtek 8723D SDIO or SPI WiFi"
+	depends on WLAN && MMC && CFG80211
+	depends on m
+	select WIRELESS_EXT
+	select WEXT_PRIV
+	---help---
+	  Help message of RTL8723DS

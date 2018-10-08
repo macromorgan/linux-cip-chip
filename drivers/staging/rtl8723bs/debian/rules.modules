@@ -1,0 +1,50 @@
+#!/usr/bin/make -f
+
+# module-assistant stuff
+PACKAGE = rtl8723bs-mp-driver-modules
+MA_DIR ?= /usr/share/modass
+-include $(MA_DIR)/include/generic.make
+-include $(MA_DIR)/include/common-rules.make
+
+include /usr/share/dpkg/buildflags.mk
+
+CROSS_COMPILE:=
+DEB_BUILD_GNU_TYPE := $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+DEB_HOST_GNU_TYPE  := $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
+ifneq ($(DEB_HOST_GNU_TYPE),$(DEB_BUILD_GNU_TYPE))
+	CC=$(DEB_HOST_GNU_TYPE)-gcc
+	CROSS_COMPILE:=$(DEB_HOST_GNU_TYPE)-
+endif
+
+ARCH:=$(shell dpkg-architecture -qDEB_HOST_ARCH_CPU)
+
+export CC ARCH CROSS_COMPILE
+
+USER_EXTRA_CFLAGS+=-DCONFIG_IOCTL_CFG80211 -DRTW_USE_CFG80211_STA_EVENT
+USER_EXTRA_CFLAGS+=-DCONFIG_CONCURRENT_MODE -DCONFIG_MP_INCLUDED
+USER_EXTRA_CFLAGS+=-DCONFIG_WIFI_MONITOR=y
+
+kdist_clean: prep-deb-files
+	dh_clean
+	$(MAKE) clean KBUILD=$(KSRC) KVER=$(KVERS)
+
+kdist_config: prep-deb-files
+
+binary-modules: kdist_config
+	dh_testdir
+	dh_testroot
+	dh_prep
+	# Build and install the module
+	$(MAKE) KSRC=$(KSRC) USER_EXTRA_CFLAGS="$(USER_EXTRA_CFLAGS)" modules
+	# Install the module
+	$(MAKE) KSRC=$(KSRC) PREFIX=$(CURDIR)/debian/$(PKGNAME) modules_install
+	rm -f $(CURDIR)/debian/$(PKGNAME)/lib/modules/$(KVERS)/m*
+	dh_installdocs
+	dh_installchangelogs
+	dh_installmodules
+	dh_compress
+	dh_fixperms
+	dh_installdeb
+	dh_gencontrol -- -v$(VERSION)
+	dh_md5sums
+	dh_builddeb --destdir=$(DEB_DESTDIR)

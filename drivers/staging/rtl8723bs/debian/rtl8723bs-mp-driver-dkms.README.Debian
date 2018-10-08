@@ -1,0 +1,18 @@
+Important note
+==============
+
+Driver from Realtek conflicts with the following modules:
+ * rtl8723bs, Realtek driver being cleaned for upstream
+
+These modules are blacklisted in the
+/etc/modprobe.d/rtl8723bs-mp-driver-dkms.conf file, initrd file is
+automatically rebuilt by dkms but you need to restart your computer at the
+first installation.
+
+Please note that any network card that requires b44 module will not work until
+rtl8723bs-mp-driver-dkms is installed.
+
+The plan is to create an upstream driver in the linux kernel.  When that works,
+consider using one of the upstream drivers instead.
+
+ -- Jason Abele <jason@nextthing.co>  Wed, 11 Nov 2015 12:36:41 -0800

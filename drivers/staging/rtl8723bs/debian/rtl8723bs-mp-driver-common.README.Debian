@@ -1,0 +1,13 @@
+Important note
+==============
+
+This driver from conflicts with r8723bs module, so we have to blacklist
+the following modules:
+ * r8723bs, rtl8723bs driver being cleaned for upstreaming
+
+This is done in /etc/modprobe.d/rtl8723bs-mp-driver-common.conf file, you also
+should rebuild initrd file with the following command:
+
+        # update-initramfs -u -k `uname -r`
+
+ -- Jason Abele <jason@nextthing.co>  Wed, 11 Nov 2015 12:36:41 -0800
