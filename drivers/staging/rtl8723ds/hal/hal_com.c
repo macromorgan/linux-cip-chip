@@ -1244,8 +1244,6 @@ exit:
 			, hdl_here ? "handle" : "enqueue"
 			, ret == _SUCCESS ? "ok" : "fail"
 		);
-		if (DBG_C2H_PKT_PRE_HDL >= 2)
-			RTW_PRINT_DUMP("dump: ", buf, len);
 	}
 #endif
 }
@@ -1284,8 +1282,6 @@ exit:
 			, !bypass ? "handle" : "bypass"
 			, ret == _SUCCESS ? "ok" : "fail"
 		);
-		if (DBG_C2H_PKT_HDL >= 2)
-			RTW_PRINT_DUMP("dump: ", buf, len);
 	}
 #endif
 }
