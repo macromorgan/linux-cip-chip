@@ -1,5 +1,7 @@
 /*
- * linux/drivers/mmc/host/tmio_mmc.h
+ * Driver for the MMC / SD / SDIO cell found in:
+ *
+ * TC6393XB TC6391XB TC6387XB T7L66XB ASIC3
  *
  * Copyright (C) 2016 Sang Engineering, Wolfram Sang
  * Copyright (C) 2015-16 Renesas Electronics Corporation
@@ -10,9 +12,6 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Driver for the MMC / SD / SDIO cell found in:
- *
- * TC6393XB TC6391XB TC6387XB T7L66XB ASIC3
  */
 
 #ifndef TMIO_MMC_H
@@ -48,6 +47,10 @@
 #define CTL_SDIO_REGS 0x100
 #define CTL_CLK_AND_WAIT_CTL 0x138
 #define CTL_RESET_SDIO 0x1e0
+
+/* Definitions for values the CTL_STOP_INTERNAL_ACTION register can take */
+#define TMIO_STOP_STP		BIT(0)
+#define TMIO_STOP_SEC		BIT(8)
 
 /* Definitions for values the CTRL_STATUS register can take. */
 #define TMIO_STAT_CMDRESPEND    BIT(0)
@@ -90,6 +93,8 @@
 #define TMIO_SDIO_STAT_EXWT	0x8000
 #define TMIO_SDIO_MASK_ALL	0xc007
 
+#define TMIO_SDIO_SETBITS_MASK	0x0006
+
 /* Define some IRQ masks */
 /* This is the mask used at reset by the chip */
 #define TMIO_MASK_ALL           0x837f031d
@@ -106,6 +111,16 @@ struct tmio_mmc_dma {
 	enum dma_slave_buswidth dma_buswidth;
 	bool (*filter)(struct dma_chan *chan, void *arg);
 	void (*enable)(struct tmio_mmc_host *host, bool enable);
+};
+
+struct tmio_mmc_dma_ops {
+	void (*start)(struct tmio_mmc_host *host, struct mmc_data *data);
+	void (*enable)(struct tmio_mmc_host *host, bool enable);
+	void (*request)(struct tmio_mmc_host *host,
+			struct tmio_mmc_data *pdata);
+	void (*release)(struct tmio_mmc_host *host);
+	void (*abort)(struct tmio_mmc_host *host);
+	void (*dataend)(struct tmio_mmc_host *host);
 };
 
 struct tmio_mmc_host {
@@ -134,6 +149,7 @@ struct tmio_mmc_host {
 	bool			force_pio;
 	struct dma_chan		*chan_rx;
 	struct dma_chan		*chan_tx;
+	struct completion	dma_dataend;
 	struct tasklet_struct	dma_complete;
 	struct tasklet_struct	dma_issue;
 	struct scatterlist	bounce_sg;
@@ -153,9 +169,12 @@ struct tmio_mmc_host {
 	struct mutex		ios_lock;	/* protect set_ios() context */
 	bool			native_hotplug;
 	bool			sdio_irq_enabled;
+	u32			scc_tappos;
 
-	int (*write16_hook)(struct tmio_mmc_host *host, int addr);
+	/* Mandatory callback */
 	int (*clk_enable)(struct tmio_mmc_host *host);
+
+	/* Optional callbacks */
 	unsigned int (*clk_update)(struct tmio_mmc_host *host,
 				   unsigned int new_clock);
 	void (*clk_disable)(struct tmio_mmc_host *host);
@@ -164,12 +183,30 @@ struct tmio_mmc_host {
 	int (*card_busy)(struct mmc_host *mmc);
 	int (*start_signal_voltage_switch)(struct mmc_host *mmc,
 					   struct mmc_ios *ios);
+	int (*write16_hook)(struct tmio_mmc_host *host, int addr);
+	void (*hw_reset)(struct tmio_mmc_host *host);
+	void (*prepare_tuning)(struct tmio_mmc_host *host, unsigned long tap);
+	bool (*check_scc_error)(struct tmio_mmc_host *host);
+
+	/*
+	 * Mandatory callback for tuning to occur which is optional for SDR50
+	 * and mandatory for SDR104.
+	 */
+	unsigned int (*init_tuning)(struct tmio_mmc_host *host);
+	int (*select_tuning)(struct tmio_mmc_host *host);
+
+	/* Tuning values: 1 for success, 0 for failure */
+	DECLARE_BITMAP(taps, BITS_PER_BYTE * sizeof(long));
+	unsigned int tap_num;
+
+	const struct tmio_mmc_dma_ops *dma_ops;
 };
 
 struct tmio_mmc_host *tmio_mmc_host_alloc(struct platform_device *pdev);
 void tmio_mmc_host_free(struct tmio_mmc_host *host);
 int tmio_mmc_host_probe(struct tmio_mmc_host *host,
-			struct tmio_mmc_data *pdata);
+			struct tmio_mmc_data *pdata,
+			const struct tmio_mmc_dma_ops *dma_ops);
 void tmio_mmc_host_remove(struct tmio_mmc_host *host);
 void tmio_mmc_do_data_irq(struct tmio_mmc_host *host);
 
@@ -190,38 +227,6 @@ static inline void tmio_mmc_kunmap_atomic(struct scatterlist *sg,
 	kunmap_atomic(virt - sg->offset);
 	local_irq_restore(*flags);
 }
-
-#if defined(CONFIG_MMC_SDHI) || defined(CONFIG_MMC_SDHI_MODULE)
-void tmio_mmc_start_dma(struct tmio_mmc_host *host, struct mmc_data *data);
-void tmio_mmc_enable_dma(struct tmio_mmc_host *host, bool enable);
-void tmio_mmc_request_dma(struct tmio_mmc_host *host, struct tmio_mmc_data *pdata);
-void tmio_mmc_release_dma(struct tmio_mmc_host *host);
-void tmio_mmc_abort_dma(struct tmio_mmc_host *host);
-#else
-static inline void tmio_mmc_start_dma(struct tmio_mmc_host *host,
-			       struct mmc_data *data)
-{
-}
-
-static inline void tmio_mmc_enable_dma(struct tmio_mmc_host *host, bool enable)
-{
-}
-
-static inline void tmio_mmc_request_dma(struct tmio_mmc_host *host,
-				 struct tmio_mmc_data *pdata)
-{
-	host->chan_tx = NULL;
-	host->chan_rx = NULL;
-}
-
-static inline void tmio_mmc_release_dma(struct tmio_mmc_host *host)
-{
-}
-
-static inline void tmio_mmc_abort_dma(struct tmio_mmc_host *host)
-{
-}
-#endif
 
 #ifdef CONFIG_PM
 int tmio_mmc_host_runtime_suspend(struct device *dev);
@@ -245,6 +250,12 @@ static inline u32 sd_ctrl_read16_and_16_as_32(struct tmio_mmc_host *host, int ad
 	       readw(host->ctl + ((addr + 2) << host->bus_shift)) << 16;
 }
 
+static inline void sd_ctrl_read32_rep(struct tmio_mmc_host *host, int addr,
+		u32 *buf, int count)
+{
+	readsl(host->ctl + (addr << host->bus_shift), buf, count);
+}
+
 static inline void sd_ctrl_write16(struct tmio_mmc_host *host, int addr, u16 val)
 {
 	/* If there is a hook and it returns non-zero then there
@@ -265,6 +276,12 @@ static inline void sd_ctrl_write32_as_16_and_16(struct tmio_mmc_host *host, int 
 {
 	writew(val, host->ctl + (addr << host->bus_shift));
 	writew(val >> 16, host->ctl + ((addr + 2) << host->bus_shift));
+}
+
+static inline void sd_ctrl_write32_rep(struct tmio_mmc_host *host, int addr,
+		const u32 *buf, int count)
+{
+	writesl(host->ctl + (addr << host->bus_shift), buf, count);
 }
 
 #endif
