@@ -119,4 +119,8 @@ config OF_CONFIGFS
 	help
 	  Enable a simple user-space driven DT overlay interface.
 
+config OF_DMA_DEFAULT_COHERENT
+	# arches should select this if DMA is coherent by default for OF devices
+	bool
+
 endif # OF

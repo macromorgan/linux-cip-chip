@@ -598,18 +598,6 @@ static struct usb_gadget_strings *fn_strings[] = {
 	NULL,
 };
 
-static struct usb_qualifier_descriptor devqual_desc = {
-	.bLength = sizeof devqual_desc,
-	.bDescriptorType = USB_DT_DEVICE_QUALIFIER,
-
-	.bcdUSB = cpu_to_le16(0x200),
-	.bDeviceClass = USB_CLASS_MISC,
-	.bDeviceSubClass = 0x02,
-	.bDeviceProtocol = 0x01,
-	.bNumConfigurations = 1,
-	.bRESERVED = 0,
-};
-
 static struct usb_interface_assoc_descriptor iad_desc = {
 	.bLength = sizeof iad_desc,
 	.bDescriptorType = USB_DT_INTERFACE_ASSOCIATION,
@@ -1081,13 +1069,13 @@ afunc_bind(struct usb_configuration *cfg, struct usb_function *fn)
 	agdev->out_ep = usb_ep_autoconfig(gadget, &fs_epout_desc);
 	if (!agdev->out_ep) {
 		dev_err(dev, "%s:%d Error!\n", __func__, __LINE__);
-		return ret;
+		return -ENODEV;
 	}
 
 	agdev->in_ep = usb_ep_autoconfig(gadget, &fs_epin_desc);
 	if (!agdev->in_ep) {
 		dev_err(dev, "%s:%d Error!\n", __func__, __LINE__);
-		return ret;
+		return -ENODEV;
 	}
 
 	uac2->p_prm.uac2 = uac2;

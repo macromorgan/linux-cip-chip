@@ -172,6 +172,7 @@ dtb-$(CONFIG_MACH_KIRKWOOD) += \
 	kirkwood-ds109.dtb \
 	kirkwood-ds110jv10.dtb \
 	kirkwood-ds111.dtb \
+	kirkwood-ds112.dtb \
 	kirkwood-ds209.dtb \
 	kirkwood-ds210.dtb \
 	kirkwood-ds212.dtb \
@@ -468,6 +469,7 @@ dtb-$(CONFIG_SOC_AM33XX) += \
 	am335x-sl50.dtb \
 	am335x-evm.dtb \
 	am335x-evmsk.dtb \
+	am335x-moxa-uc-8100-me-t.dtb \
 	am335x-nano.dtb \
 	am335x-pepper.dtb \
 	am335x-lxm.dtb \
